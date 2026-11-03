@@ -1,20 +1,19 @@
-/* Evolution Arena — canvas renderer (glow sprites + motion tails). */
+/* Evolution Arena — petri-dish renderer: agar, glass rim, cells with flagella. */
 (function (root) {
   'use strict';
-  const { FOOD_HUE } = root.Evo;
-  const SPRITE = 64;
+
+  const TAU = Math.PI * 2;
 
   class Renderer {
     constructor(canvas) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
-      this.sprites = new Map();
-      this.foodSprite = this.makeSprite(FOOD_HUE, true);
       this.ripples = [];
       this.w = 0;
       this.h = 0;
       this.dpr = 1;
       this.bg = null;
+      this.bgKey = '';
     }
 
     resize(w, h) {
@@ -23,134 +22,182 @@
       this.h = h;
       this.canvas.width = Math.round(w * this.dpr);
       this.canvas.height = Math.round(h * this.dpr);
-      this.bg = this.makeBackground();
+      this.bgKey = '';
     }
 
-    makeSprite(hue, food) {
-      const c = document.createElement('canvas');
-      c.width = c.height = SPRITE;
-      const g = c.getContext('2d');
-      const h = SPRITE / 2;
-      const grd = g.createRadialGradient(h, h, 0, h, h, h);
-      if (food) {
-        grd.addColorStop(0, `hsla(${hue},100%,88%,1)`);
-        grd.addColorStop(0.22, `hsla(${hue},90%,62%,0.9)`);
-        grd.addColorStop(0.5, `hsla(${hue},90%,50%,0.16)`);
-        grd.addColorStop(1, `hsla(${hue},90%,45%,0)`);
-      } else {
-        grd.addColorStop(0, `hsla(${hue},100%,97%,1)`);
-        grd.addColorStop(0.18, `hsla(${hue},100%,74%,1)`);
-        grd.addColorStop(0.4, `hsla(${hue},100%,60%,0.42)`);
-        grd.addColorStop(0.7, `hsla(${hue},100%,55%,0.08)`);
-        grd.addColorStop(1, `hsla(${hue},100%,50%,0)`);
-      }
-      g.fillStyle = grd;
-      g.fillRect(0, 0, SPRITE, SPRITE);
-      return c;
-    }
-
-    sprite(hue) {
-      const key = (Math.round(hue / 4) * 4) % 360;
-      let s = this.sprites.get(key);
-      if (!s) {
-        s = this.makeSprite(key, false);
-        this.sprites.set(key, s);
-      }
-      return s;
-    }
-
-    makeBackground() {
+    /* Bench, dish shadow, agar and glass rim are static: render once per size. */
+    background(sim) {
+      const key = `${this.canvas.width}x${this.canvas.height}:${sim.R}`;
+      if (this.bgKey === key) return this.bg;
       const c = document.createElement('canvas');
       c.width = this.canvas.width;
       c.height = this.canvas.height;
       const g = c.getContext('2d');
-      const W = c.width, H = c.height;
-      g.fillStyle = '#04060c';
-      g.fillRect(0, 0, W, H);
-      let grd = g.createRadialGradient(W * 0.5, H * 0.45, 0, W * 0.5, H * 0.45, Math.max(W, H) * 0.7);
-      grd.addColorStop(0, 'rgba(22,32,58,0.45)');
-      grd.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = grd;
-      g.fillRect(0, 0, W, H);
-      // Faint organic speckle so the void has texture.
-      const n = Math.floor((W * H) / 700);
-      for (let i = 0; i < n; i++) {
-        g.fillStyle = `rgba(120,140,190,${Math.random() * 0.05})`;
-        const s = (0.6 + Math.random() * 1.6) * this.dpr;
-        g.fillRect(Math.random() * W, Math.random() * H, s, s);
+      g.scale(this.dpr, this.dpr);
+      const { cx, cy, R } = sim;
+
+      g.fillStyle = '#e7e0d0';
+      g.fillRect(0, 0, this.w, this.h);
+      // Paper grain.
+      for (let i = 0, n = (this.w * this.h) / 120; i < n; i++) {
+        g.fillStyle = Math.random() < 0.5 ? 'rgba(90,70,40,0.05)' : 'rgba(255,255,255,0.18)';
+        g.fillRect(Math.random() * this.w, Math.random() * this.h, 1, 1);
       }
-      grd = g.createRadialGradient(W * 0.5, H * 0.5, Math.min(W, H) * 0.35, W * 0.5, H * 0.5, Math.max(W, H) * 0.75);
-      grd.addColorStop(0, 'rgba(0,0,0,0)');
-      grd.addColorStop(1, 'rgba(0,0,0,0.55)');
-      g.fillStyle = grd;
-      g.fillRect(0, 0, W, H);
+
+      // Soft shadow under the dish.
+      g.save();
+      g.filter = 'blur(14px)';
+      g.fillStyle = 'rgba(60,45,20,0.28)';
+      g.beginPath();
+      g.ellipse(cx + 6, cy + 12, R + 10, R + 8, 0, 0, TAU);
+      g.fill();
+      g.restore();
+
+      // Glass lip.
+      g.fillStyle = 'rgba(250,248,240,0.9)';
+      g.beginPath();
+      g.arc(cx, cy, R + 10, 0, TAU);
+      g.fill();
+      g.strokeStyle = 'rgba(70,60,40,0.35)';
+      g.lineWidth = 1.2;
+      g.stroke();
+
+      // Agar.
+      const agar = g.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.1, cx, cy, R);
+      agar.addColorStop(0, '#fbf3da');
+      agar.addColorStop(0.75, '#f3e6bd');
+      agar.addColorStop(1, '#e9d6a1');
+      g.fillStyle = agar;
+      g.beginPath();
+      g.arc(cx, cy, R, 0, TAU);
+      g.fill();
+
+      // Faint agar texture.
+      g.save();
+      g.beginPath();
+      g.arc(cx, cy, R, 0, TAU);
+      g.clip();
+      for (let i = 0, n = (R * R) / 60; i < n; i++) {
+        const [x, y] = [cx + (Math.random() * 2 - 1) * R, cy + (Math.random() * 2 - 1) * R];
+        g.fillStyle = `rgba(150,110,40,${Math.random() * 0.06})`;
+        g.beginPath();
+        g.arc(x, y, Math.random() * 2.2, 0, TAU);
+        g.fill();
+      }
+      g.restore();
+
+      g.strokeStyle = 'rgba(120,95,45,0.45)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.arc(cx, cy, R, 0, TAU);
+      g.stroke();
+
+      // Glass highlight.
+      g.strokeStyle = 'rgba(255,255,255,0.85)';
+      g.lineWidth = 3;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.arc(cx, cy, R + 5, Math.PI * 1.08, Math.PI * 1.42);
+      g.stroke();
+
+      // Measurement ticks around the rim.
+      g.strokeStyle = 'rgba(70,60,40,0.4)';
+      g.lineWidth = 1;
+      for (let i = 0; i < 72; i++) {
+        const a = (i / 72) * TAU, long = i % 6 === 0;
+        const r0 = R + 13, r1 = R + (long ? 21 : 17);
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+        g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+        g.stroke();
+      }
+
+      this.bg = c;
+      this.bgKey = key;
       return c;
     }
 
-    ripple(x, y, hue) {
-      this.ripples.push({ x, y, hue, t0: performance.now() });
+    ripple(x, y) {
+      this.ripples.push({ x, y, t0: performance.now() });
     }
 
-    /* Draw one glowing organism with a fading comet tail. Shared with the preview. */
-    drawOrganism(ctx, x, y, vx, vy, radius, hue) {
+    /* A single cell: wiggling flagellum, stretched membrane, nucleus; hunters get jaws. */
+    drawCell(ctx, x, y, vx, vy, r, hue, armor, hunter, phase, now) {
       const sp = Math.hypot(vx, vy);
-      if (sp > 0.05) {
-        const len = radius * 1.2 + sp * 9;
-        const tx = x - (vx / sp) * len, ty = y - (vy / sp) * len;
-        const grd = ctx.createLinearGradient(x, y, tx, ty);
-        grd.addColorStop(0, `hsla(${hue},100%,72%,0.75)`);
-        grd.addColorStop(1, `hsla(${hue},100%,60%,0)`);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = grd;
-        ctx.lineWidth = radius * 0.9;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(tx, ty);
-        ctx.stroke();
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(sp > 0.03 ? Math.atan2(vy, vx) : phase);
+
+      const stretch = 1 + Math.min(0.35, sp * 0.13);
+      const rx = r * stretch, ry = r / Math.sqrt(stretch);
+      const ink = `hsl(${hue},55%,${hunter ? 22 : 30}%)`;
+
+      // Flagellum.
+      const L = r * 1.5 + sp * 6;
+      ctx.strokeStyle = `hsla(${hue},45%,28%,0.6)`;
+      ctx.lineWidth = Math.max(0.7, r * 0.2);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-rx * 0.9, 0);
+      for (let i = 1; i <= 6; i++) {
+        const u = i / 6;
+        ctx.lineTo(-rx * 0.9 - L * u, Math.sin(now * 0.018 * (0.5 + sp) + phase - u * 5) * r * 0.4 * u);
       }
-      const D = radius * 4.4;
-      ctx.globalAlpha = 1;
-      ctx.drawImage(this.sprite(hue), x - D / 2, y - D / 2, D, D);
+      ctx.stroke();
+
+      if (hunter) {
+        ctx.fillStyle = ink;
+        ctx.beginPath();
+        ctx.moveTo(rx * 0.8, -ry * 0.55);
+        ctx.lineTo(rx + r * 0.55, -ry * 0.15);
+        ctx.lineTo(rx * 0.9, 0);
+        ctx.lineTo(rx + r * 0.55, ry * 0.15);
+        ctx.lineTo(rx * 0.8, ry * 0.55);
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, TAU);
+      ctx.fillStyle = `hsla(${hue},72%,62%,0.88)`;
+      ctx.fill();
+      ctx.lineWidth = 0.8 + armor * 0.2;
+      ctx.strokeStyle = ink;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(rx * 0.18, -ry * 0.05, r * 0.36, 0, TAU);
+      ctx.fillStyle = `hsla(${hue},60%,26%,0.85)`;
+      ctx.fill();
+      ctx.restore();
     }
 
     draw(sim, selected, now) {
       const ctx = this.ctx, dpr = this.dpr;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1;
-      if (this.bg) ctx.drawImage(this.bg, 0, 0);
+      ctx.drawImage(this.background(sim), 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      ctx.globalCompositeOperation = 'lighter';
-      const fs = this.foodSprite;
+      // Food: olive grains, batched into one path.
+      ctx.fillStyle = '#7f9b2e';
+      ctx.beginPath();
       for (const f of sim.food) {
         if (!f.alive) continue;
-        const s = 9 + Math.sin(now * 0.002 + f.tw) * 1.3;
-        ctx.drawImage(fs, f.x - s / 2, f.y - s / 2, s, s);
+        ctx.moveTo(f.x + 2, f.y);
+        ctx.arc(f.x, f.y, 2, 0, TAU);
       }
-      for (const o of sim.orgs) this.drawOrganism(ctx, o.x, o.y, o.vx, o.vy, o.d.radius, o.hue);
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.fill();
 
-      // Heavily armoured creatures carry a faint shell.
-      ctx.lineWidth = 1;
       for (const o of sim.orgs) {
-        if (o.t.armor < 6) continue;
-        ctx.strokeStyle = `hsla(${o.hue},70%,82%,${((o.t.armor - 5) / 5) * 0.45})`;
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.d.radius + 2, 0, Math.PI * 2);
-        ctx.stroke();
+        this.drawCell(ctx, o.x, o.y, o.vx, o.vy, o.d.radius, o.hue, o.t.armor, o.d.hunter, o.id * 1.7, now);
       }
 
-      // Click ripples.
       this.ripples = this.ripples.filter((r) => now - r.t0 < 700);
       for (const r of this.ripples) {
         const k = (now - r.t0) / 700;
-        ctx.strokeStyle = `hsla(${r.hue},90%,70%,${0.6 * (1 - k)})`;
+        ctx.strokeStyle = `rgba(90,110,30,${0.7 * (1 - k)})`;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(r.x, r.y, 6 + k * 34, 0, Math.PI * 2);
+        ctx.arc(r.x, r.y, 5 + k * 30, 0, TAU);
         ctx.stroke();
       }
 
@@ -159,23 +206,23 @@
 
     drawSelection(ctx, o, now) {
       const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-      ctx.strokeStyle = `hsla(${o.hue},90%,80%,${0.55 + pulse * 0.35})`;
+      ctx.strokeStyle = '#1d2326';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(o.x, o.y, o.d.radius + 7 + pulse * 2, 0, Math.PI * 2);
+      ctx.arc(o.x, o.y, o.d.radius + 6 + pulse * 2, 0, TAU);
       ctx.stroke();
 
-      ctx.setLineDash([3, 6]);
-      ctx.strokeStyle = `hsla(${o.hue},80%,70%,0.22)`;
+      ctx.setLineDash([2, 5]);
+      ctx.strokeStyle = 'rgba(29,35,38,0.4)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(o.x, o.y, o.d.vision, 0, Math.PI * 2);
+      ctx.arc(o.x, o.y, o.d.vision, 0, TAU);
       ctx.stroke();
       ctx.setLineDash([]);
 
       if (o.tgt && o.tgt.alive) {
-        const colors = ['', 'rgba(110,240,190,0.5)', 'rgba(255,110,120,0.6)', 'rgba(255,210,120,0.55)'];
-        ctx.strokeStyle = colors[o.mode] || 'rgba(255,255,255,0.3)';
+        const colors = ['', 'rgba(95,120,30,0.8)', 'rgba(200,50,40,0.8)', 'rgba(200,130,20,0.8)'];
+        ctx.strokeStyle = colors[o.mode] || 'rgba(0,0,0,0.4)';
         ctx.beginPath();
         ctx.moveTo(o.x, o.y);
         ctx.lineTo(o.tgt.x, o.tgt.y);

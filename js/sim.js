@@ -17,7 +17,7 @@
   const SAMPLE_EVERY = 20;
   const DUEL_TICKS = 60 * 120;
   const CROWD_R2 = 45 * 45;
-  const DENSITY_K = 160; // species size where density pressure starts to bite
+  const DENSITY_RATIO = 0.43; // density pressure bites at this fraction of the food cap
 
   const WANDER = 0, FORAGE = 1, HUNT = 2, FLEE = 3;
   const MODE_NAMES = ['wandering', 'foraging', 'hunting', 'fleeing'];
@@ -164,13 +164,36 @@
 
   class Sim {
     constructor(w, h) {
-      this.w = w;
-      this.h = h;
+      this.setBounds(w, h);
       this.mode = 'ecosystem';
       this.foodGrid = new Grid(48);
       this.orgGrid = new Grid(64);
       this._q = [];
       this.reset('ecosystem');
+    }
+
+    /* The world is a round dish centred in a w×h box. */
+    setBounds(w, h) {
+      this.w = w;
+      this.h = h;
+      this.cx = w / 2;
+      this.cy = h / 2;
+      this.R = Math.max(60, Math.min(w, h) / 2 - 16);
+    }
+
+    randPoint(frac) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * this.R * frac;
+      return [this.cx + Math.cos(a) * r, this.cy + Math.sin(a) * r];
+    }
+
+    /* Push a point back inside the dish; returns the outward normal if it was outside. */
+    keepInside(p, margin) {
+      const dx = p.x - this.cx, dy = p.y - this.cy, d = Math.hypot(dx, dy), lim = this.R - margin;
+      if (d <= lim || d === 0) return null;
+      const nx = dx / d, ny = dy / d;
+      p.x = this.cx + nx * lim;
+      p.y = this.cy + ny * lim;
+      return [nx, ny];
     }
 
     reset(mode) {
@@ -189,9 +212,10 @@
       this.duel = null;
       this.patches = [];
       for (let i = 0; i < 3; i++) {
+        const [px, py] = this.randPoint(0.6);
         this.patches.push({
-          x: rand(0.15, 0.85) * this.w,
-          y: rand(0.15, 0.85) * this.h,
+          x: px,
+          y: py,
           vx: rand(-0.12, 0.12),
           vy: rand(-0.12, 0.12),
           r: rand(60, 110),
@@ -203,22 +227,20 @@
     }
 
     foodCap() {
-      return Math.max(60, Math.floor((this.w * this.h) / 2600));
+      return Math.max(60, Math.floor((Math.PI * this.R * this.R) / 1500));
     }
 
     resize(w, h) {
-      this.w = w;
-      this.h = h;
-      for (const o of this.orgs) {
-        o.x = clamp(o.x, 0, w);
-        o.y = clamp(o.y, 0, h);
-      }
-      for (const f of this.food) if (f.x > w || f.y > h) f.alive = false;
-      this.food = this.food.filter((f) => f.alive);
-      for (const p of this.patches) {
-        p.x = clamp(p.x, 0, w);
-        p.y = clamp(p.y, 0, h);
-      }
+      const ocx = this.cx, ocy = this.cy, oR = this.R;
+      this.setBounds(w, h);
+      const k = this.R / oR;
+      const move = (p) => {
+        p.x = this.cx + (p.x - ocx) * k;
+        p.y = this.cy + (p.y - ocy) * k;
+      };
+      this.orgs.forEach(move);
+      this.food.forEach(move);
+      this.patches.forEach(move);
     }
 
     emit(type, text, hue, extra) {
@@ -232,16 +254,12 @@
           x = p.x + gauss() * p.r;
           y = p.y + gauss() * p.r;
         } else {
-          x = rand(0, this.w);
-          y = rand(0, this.h);
+          [x, y] = this.randPoint(0.98);
         }
       }
-      this.food.push({
-        x: clamp(x, 4, this.w - 4),
-        y: clamp(y, 4, this.h - 4),
-        alive: true,
-        tw: Math.random() * 6.283,
-      });
+      const f = { x, y, alive: true };
+      this.keepInside(f, 5);
+      this.food.push(f);
     }
 
     dropFood(x, y, n) {
@@ -326,12 +344,13 @@
         const o = this.makeOrg(
           sp,
           Object.assign({}, sp.traits),
-          clamp(cx + gauss() * spread, 6, this.w - 6),
-          clamp(cy + gauss() * spread, 6, this.h - 6),
+          cx + gauss() * spread,
+          cy + gauss() * spread,
           derive(sp.traits).maxEnergy * 0.9,
           1,
           (sp.hue + gauss() * 4 + 360) % 360
         );
+        this.keepInside(o, 8);
         this.orgs.push(o);
       }
       sp.count += n;
@@ -340,7 +359,8 @@
 
     spawnWild(n, quiet) {
       const sp = this.newSpecies(randomTraits(), 'wild', randomName(), this.distinctHue());
-      this.spawnGroup(sp, n, rand(0.15, 0.85) * this.w, rand(0.15, 0.85) * this.h, 40);
+      const [x, y] = this.randPoint(0.6);
+      this.spawnGroup(sp, n, x, y, 40);
       if (!quiet) this.emit('arrive', `${sp.name} migrated into the arena`, sp.hue);
       return sp;
     }
@@ -348,7 +368,7 @@
     release(traits) {
       this.playerReleases++;
       const sp = this.newSpecies(traits, 'player', `Lineage ${roman(this.playerReleases)}`, this.distinctHue(traitHue(traits)));
-      const x = rand(0.2, 0.8) * this.w, y = rand(0.2, 0.8) * this.h;
+      const [x, y] = this.randPoint(0.55);
       this.spawnGroup(sp, 12, x, y, 30);
       this.dropFood(x, y, 24); // a starter cache so newcomers get a foothold
       this.emit('release', `${sp.name} released into the wild`, sp.hue);
@@ -361,8 +381,8 @@
       let rh = traitHue(rivalTraits);
       if (Math.abs(hueDiff(rh, p.hue)) < 50) rh = avoidFoodHue(p.hue + 180);
       const r = this.newSpecies(rivalTraits, 'rival', rivalName || randomName(), rh);
-      this.spawnGroup(p, 16, this.w * 0.18, this.h * 0.5, 35);
-      this.spawnGroup(r, 16, this.w * 0.82, this.h * 0.5, 35);
+      this.spawnGroup(p, 16, this.cx - this.R * 0.6, this.cy, 30);
+      this.spawnGroup(r, 16, this.cx + this.R * 0.6, this.cy, 30);
       this.duel = { limit: DUEL_TICKS, over: false, result: null, player: p, rival: r };
       this.emit('duel-start', `Duel begins — ${r.name} enters the arena`, r.hue);
     }
@@ -381,6 +401,7 @@
 
     step() {
       this.tick++;
+      this.densityK = this.foodCap() * DENSITY_RATIO;
       this.updatePatches();
       this.spawnFood();
       this.foodGrid.rebuild(this.food, this.w, this.h);
@@ -399,16 +420,16 @@
 
     updatePatches() {
       for (const p of this.patches) {
-        p.vx += gauss() * 0.004;
-        p.vy += gauss() * 0.004;
-        p.vx = clamp(p.vx, -0.2, 0.2);
-        p.vy = clamp(p.vy, -0.2, 0.2);
+        p.vx = clamp(p.vx + gauss() * 0.004, -0.2, 0.2);
+        p.vy = clamp(p.vy + gauss() * 0.004, -0.2, 0.2);
         p.x += p.vx;
         p.y += p.vy;
-        if (p.x < this.w * 0.1 || p.x > this.w * 0.9) p.vx = -p.vx;
-        if (p.y < this.h * 0.1 || p.y > this.h * 0.9) p.vy = -p.vy;
-        p.x = clamp(p.x, this.w * 0.1, this.w * 0.9);
-        p.y = clamp(p.y, this.h * 0.1, this.h * 0.9);
+        const n = this.keepInside(p, this.R * 0.35);
+        if (n) {
+          const vn = p.vx * n[0] + p.vy * n[1];
+          p.vx -= 2 * vn * n[0];
+          p.vy -= 2 * vn * n[1];
+        }
       }
     }
 
@@ -486,12 +507,13 @@
       let len = Math.hypot(dx, dy) || 1;
       dx /= len; dy /= len;
 
-      // Soft walls.
-      const m = 28;
-      if (o.x < m) dx += (m - o.x) / m;
-      else if (o.x > this.w - m) dx -= (o.x - this.w + m) / m;
-      if (o.y < m) dy += (m - o.y) / m;
-      else if (o.y > this.h - m) dy -= (o.y - this.h + m) / m;
+      // Soft wall: steer away from the dish rim.
+      const ox = o.x - this.cx, oy = o.y - this.cy, od = Math.hypot(ox, oy) || 1, edge = this.R - 28;
+      if (od > edge) {
+        const k = (od - edge) / 28;
+        dx -= (ox / od) * k;
+        dy -= (oy / od) * k;
+      }
       len = Math.hypot(dx, dy) || 1;
       dx /= len; dy /= len;
       if (o.mode === WANDER) o.heading = Math.atan2(dy, dx);
@@ -501,10 +523,11 @@
       o.x += o.vx;
       o.y += o.vy;
       const r = d.radius;
-      if (o.x < r) { o.x = r; o.vx = Math.abs(o.vx); }
-      else if (o.x > this.w - r) { o.x = this.w - r; o.vx = -Math.abs(o.vx); }
-      if (o.y < r) { o.y = r; o.vy = Math.abs(o.vy); }
-      else if (o.y > this.h - r) { o.y = this.h - r; o.vy = -Math.abs(o.vy); }
+      const n = this.keepInside(o, r);
+      if (n) {
+        const vn = o.vx * n[0] + o.vy * n[1];
+        if (vn > 0) { o.vx -= 2 * vn * n[0]; o.vy -= 2 * vn * n[1]; }
+      }
 
       if (t && t.alive) {
         const ddx = t.x - o.x, ddy = t.y - o.y, dist2 = ddx * ddx + ddy * ddy;
@@ -519,7 +542,7 @@
 
       // Crowding: local clumps and globally abundant species burn extra energy
       // (disease, competition) — keeps any one species from owning the arena.
-      const dens = o.sp.count / DENSITY_K;
+      const dens = o.sp.count / this.densityK;
       o.energy -= d.baseCost * (1 + o.crowd * 0.06 + dens * dens * 0.6) + d.moveCost * (o.vx * o.vx + o.vy * o.vy);
       if (o.energy > d.maxEnergy) o.energy = d.maxEnergy;
       if (o.cool <= 0 && o.age > 120 && o.energy >= d.maxEnergy * d.reproAt) this.reproduce(o, born);
