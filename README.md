@@ -1,6 +1,6 @@
 # Evolution Arena
 
-Design a species, release it into a living ecosystem, and watch natural selection decide whether it survives.
+Design a species, release it into a petri-dish ecosystem, and watch natural selection decide whether it survives.
 
 Every creature carries six heritable traits. Offspring inherit them with small random mutations, so lineages drift and adapt over generations. Some species take over the arena, others coexist, and plenty go extinct.
 
@@ -13,15 +13,15 @@ No build step and no dependencies. You can:
 
 ### Modes
 
-- **Ecosystem**: wild species roam a world with drifting food patches. Spend your 30 trait points, press **Release**, and see whether your lineage finds a niche. When diversity drops, new wild species migrate in.
-- **Duel**: your species against one rival in an empty arena for two minutes. The last lineage standing wins. If both survive, the larger population wins.
+- **Ecosystem**: wild species roam a round agar dish with drifting food patches. Spend your 30 trait points, press **Release**, and see whether your lineage finds a niche. When diversity drops, new wild species migrate in.
+- **Duel**: your species against one rival in an empty dish for two minutes. The last lineage standing wins. If both survive, the larger population wins.
 
 ### Controls
 
 | Input | Action |
 | --- | --- |
 | Click a creature | Inspect it: evolved traits vs. its founder, energy, behaviour |
-| Click empty space | Drop a burst of food |
+| Click the agar | Drop a burst of food |
 | `Space` | Pause / resume |
 | `1` `2` `4` | Simulation speed |
 | `R` | Release / start duel |
@@ -29,22 +29,22 @@ No build step and no dependencies. You can:
 
 ## Traits
 
-Each strength costs energy. There are 30 points in total, and each trait is capped at 10.
+Set each trait by clicking its pips or using the − / + buttons. Each strength costs energy. There are 30 points in total, and each trait is capped at 10.
 
 | Trait | Benefit | Cost |
 | --- | --- | --- |
 | **Speed** | Faster movement | Movement cost grows with the square of speed |
 | **Size** | More energy storage, harder hits, longer life | Higher upkeep, slower turning |
-| **Aggression** | At 4 or more the creature becomes a hunter and eats other species | Digests plants poorly |
+| **Aggression** | At 4 or more the creature becomes a hunter (drawn with jaws) and eats other species | Digests plants poorly |
 | **Vision** | Sees food, prey and threats from farther away | Upkeep |
-| **Armor** | Takes less damage, and its spines hurt attackers | Heavy, so movement and upkeep cost more |
+| **Armor** | Takes less damage, and its spines hurt attackers (thicker membrane) | Heavy, so movement and upkeep cost more |
 | **Fertility** | Breeds sooner and more often, sometimes twins | Offspring start with smaller reserves |
 
 Mutation shifts points between traits but never adds new ones. A lineage cannot become good at everything. It can only trade one strength for another.
 
 ## How the simulation works
 
-- **Energy.** Creatures spend energy every tick on upkeep plus movement. They regain it by eating food (green dots) or, for hunters, by biting other species.
+- **Energy.** Creatures spend energy every tick on upkeep plus movement. They regain it by eating food (olive grains) or, for hunters, by biting other species.
 - **Behaviour.** Every few ticks a creature looks around within its vision. It flees from a hunter that would win a fight, chases prey it can beat, or forages for the nearest food. Otherwise it wanders.
 - **Reproduction.** Above an energy threshold (lower when fertility is higher), a creature splits off one or two offspring with mutated traits.
 - **Density pressure.** Large species and local clumps pay extra upkeep, which stands in for disease and competition. This stops any one species from owning the arena forever and gives newcomers room.
@@ -56,7 +56,7 @@ Mutation shifts points between traits but never adds new ones. A lineage cannot 
 index.html       page shell
 css/style.css    styling
 js/sim.js        simulation core (no DOM, also runs under node)
-js/render.js     canvas renderer: glow sprites and comet tails
+js/render.js     canvas renderer: agar dish, cells with nuclei and flagella
 js/ui.js         controls, stats, chart, inspector, main loop
 ```
 
