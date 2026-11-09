@@ -32,18 +32,18 @@
       check: ({ progress }) => progress.duelsWon >= 1 },
     { id: 'duel5', title: 'Champion', desc: 'Win 5 duels.',
       check: ({ progress }) => progress.duelsWon >= 5 },
-    { id: 'builder', title: 'Architect', desc: 'Place 300 blocks of terrain.',
-      check: ({ progress }) => progress.blocks >= 300 },
-    { id: 'garden', title: 'Petri gardener', desc: 'Grow a mold colony of 500 cells.',
+    { id: 'rules', title: 'Rule bender', desc: 'Run the Life layer under 4 different rules.',
+      check: ({ progress }) => (progress.rules || []).length >= 4 },
+    { id: 'garden', title: 'Petri gardener', desc: 'Grow the Life layer to 500 cells.',
       check: ({ sim }) => sim.world.moldCount >= 500 },
-    { id: 'gun', title: 'Glider factory', desc: 'Stamp a glider gun into the mold.',
+    { id: 'gun', title: 'Glider factory', desc: 'Stamp a glider gun onto the agar.',
       check: ({ progress }) => progress.guns >= 1 },
     { id: 'witness', title: 'Witness', desc: 'See 15 species go extinct.',
       check: ({ progress }) => progress.extinctions >= 15 },
   ];
 
   function load() {
-    const base = { done: {}, releases: 0, duelsWon: 0, blocks: 0, guns: 0, extinctions: 0, nightsSurvived: 0, meteorSurvived: 0 };
+    const base = { done: {}, releases: 0, duelsWon: 0, rules: ['conway'], guns: 0, extinctions: 0, nightsSurvived: 0, meteorSurvived: 0 };
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) return Object.assign(base, JSON.parse(raw));

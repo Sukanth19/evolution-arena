@@ -17,7 +17,7 @@
       <span class="logo" aria-hidden="true"></span>
       <div>
         <h1>Evolution Arena</h1>
-        <p>a petri-dish sandbox</p>
+        <p>evolution meets the game of life</p>
       </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Game mode">
@@ -42,7 +42,7 @@
       <div class="dock">
         <div class="tool-label" id="tool-label"></div>
         <div class="hotbar" id="hotbar" role="toolbar" aria-label="Tools"></div>
-        <div class="keys">1–9 tools · drag to use · <kbd>[</kbd><kbd>]</kbd> brush · wheel zoom · WASD / right-drag pan · <kbd>F</kbd> follow · <kbd>Space</kbd> pause</div>
+        <div class="keys">1–5 tools · <kbd>[</kbd><kbd>]</kbd> brush · wheel zoom · WASD / right-drag pan · <kbd>F</kbd> follow · <kbd>Space</kbd> pause</div>
       </div>
       <div class="view-ctl">
         <button id="zoom-in" title="Zoom in (+)">+</button>
@@ -92,7 +92,7 @@
           <div class="tile accent"><span id="s-lineage-label">yours</span><b id="s-lineage">0</b></div>
           <div class="tile"><span>species</span><b id="s-species">0</b></div>
           <div class="tile"><span>food</span><b id="s-food">0</b></div>
-          <div class="tile"><span>mold</span><b id="s-mold">0</b></div>
+          <div class="tile"><span>life cells</span><b id="s-mold">0</b></div>
           <div class="tile" id="duel-tile" hidden><span>time left</span><b id="s-time">2:00</b></div>
         </div>
         <canvas id="chart" class="chart" aria-label="Population over time"></canvas>
@@ -107,18 +107,18 @@
           </div>
         </div>
         <label class="field">
-          <span>Mold rule</span>
+          <span>Life rule</span>
           <select id="rule"></select>
         </label>
         <label class="field">
-          <span>Mold tool stamps</span>
+          <span>Life tool</span>
           <select id="pattern"></select>
         </label>
         <p class="rule-help" id="rule-help"></p>
         <label class="check"><input type="checkbox" id="events-on" checked> Random world events</label>
         <div class="event-btns" id="event-btns"></div>
         <div class="world-btns">
-          <button class="btn btn-quiet small" id="new-world">New world</button>
+          <button class="btn btn-quiet small" id="new-world">New dish</button>
           <button class="btn btn-quiet small" id="blank-world">Blank dish</button>
           <button class="btn btn-quiet small" id="save-world">Save</button>
           <button class="btn btn-quiet small" id="load-world">Load</button>

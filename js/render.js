@@ -1,58 +1,9 @@
-/* Evolution Arena — petri-dish renderer: agar, block terrain, mold, cells, day/night, camera. */
+/* Evolution Arena — petri-dish renderer: agar, Life colonies, cells, day/night, camera. */
 (function (root) {
   'use strict';
 
   const TAU = Math.PI * 2;
-  const { TILE, T } = root.EvoWorld;
-
-  /* Small pixel-art textures (TILE×TILE) for each terrain type, a few variants each. */
-  const PALETTES = {
-    [T.ROCK]:  { base: [128, 122, 112], dark: [92, 87, 80], light: [160, 154, 143], speck: [104, 98, 90] },
-    [T.WATER]: { base: [74, 146, 196], dark: [56, 118, 170], light: [128, 190, 228], speck: [96, 166, 210] },
-    [T.SOIL]:  { base: [122, 84, 52], dark: [94, 63, 38], light: [146, 104, 66], speck: [104, 150, 58] },
-    [T.TOXIN]: { base: [132, 74, 156], dark: [104, 54, 126], light: [160, 102, 182], speck: [178, 226, 72] },
-  };
-
-  function makeTextures() {
-    const tex = {};
-    for (const type of [T.ROCK, T.WATER, T.SOIL, T.TOXIN]) {
-      const p = PALETTES[type];
-      tex[type] = [];
-      for (let v = 0; v < 4; v++) {
-        const img = new ImageData(TILE, TILE);
-        for (let y = 0; y < TILE; y++) {
-          for (let x = 0; x < TILE; x++) {
-            let c = p.base;
-            const r = Math.random();
-            if (type === T.ROCK) {
-              if (y === 0 || x === 0) c = p.light; // bevel
-              else if (y === TILE - 1 || x === TILE - 1) c = p.dark;
-              else if (r < 0.22) c = p.speck;
-              else if (r < 0.3) c = p.light;
-            } else if (type === T.WATER) {
-              if ((y + v) % 4 === 0 && r < 0.6) c = p.light;
-              else if (r < 0.2) c = p.speck;
-            } else if (type === T.SOIL) {
-              if (r < 0.12) c = p.speck;
-              else if (r < 0.3) c = p.dark;
-              else if (r < 0.38) c = p.light;
-            } else if (type === T.TOXIN) {
-              if (r < 0.1) c = p.speck;
-              else if (r < 0.3) c = p.dark;
-              else if (r < 0.36) c = p.light;
-            }
-            const k = (y * TILE + x) * 4;
-            img.data[k] = c[0];
-            img.data[k + 1] = c[1];
-            img.data[k + 2] = c[2];
-            img.data[k + 3] = 255;
-          }
-        }
-        tex[type].push(img);
-      }
-    }
-    return tex;
-  }
+  const { TILE } = root.EvoWorld;
 
   class Renderer {
     constructor(canvas) {
@@ -66,8 +17,6 @@
       this.paper = null;
       this.dish = null;
       this.dishKey = '';
-      this.textures = makeTextures();
-      this.terrain = null;
       this.shake = 0;
       this.view = { x: 0, y: 0, zoom: 1 };
       this.insetBottom = 0; // screen space kept clear for the hotbar
@@ -201,49 +150,6 @@
       return c;
     }
 
-    /* Terrain is a world-sized pixel canvas updated tile by tile as the dish is painted. */
-    terrainLayer(sim) {
-      const w = sim.world;
-      if (!this.terrain || this.terrain.width !== w.cols * TILE) {
-        this.terrain = document.createElement('canvas');
-        this.terrain.width = w.cols * TILE;
-        this.terrain.height = w.rows * TILE;
-        this.tctx = this.terrain.getContext('2d');
-        w.dirtyAll = true;
-      }
-      const g = this.tctx;
-      const drawTile = (i) => {
-        const x = (i % w.cols) * TILE, y = Math.floor(i / w.cols) * TILE;
-        const t = w.terrain[i];
-        if (t === T.AGAR) g.clearRect(x, y, TILE, TILE);
-        else g.putImageData(this.textures[t][(i * 7919) % 4], x, y);
-      };
-      if (w.dirtyAll) {
-        g.clearRect(0, 0, this.terrain.width, this.terrain.height);
-        for (let i = 0; i < w.terrain.length; i++) if (w.terrain[i] !== T.AGAR) drawTile(i);
-        w.dirtyAll = false;
-        w.dirty.length = 0;
-      } else if (w.dirty.length) {
-        for (const i of w.dirty) drawTile(i);
-        w.dirty.length = 0;
-      }
-      return this.terrain;
-    }
-
-    /* A tile's texture, scaled up — used for hotbar icons. */
-    tileIcon(type, size) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const g = c.getContext('2d');
-      const t = document.createElement('canvas');
-      t.width = t.height = TILE * 2;
-      const tg = t.getContext('2d');
-      for (let k = 0; k < 4; k++) tg.putImageData(this.textures[type][k], (k % 2) * TILE, (k >> 1) * TILE);
-      g.imageSmoothingEnabled = false;
-      g.drawImage(t, 0, 0, size, size);
-      return c;
-    }
-
     /* ------------------------------------------------------------ effects */
 
     ripple(x, y, color) {
@@ -327,9 +233,6 @@
       ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
 
       ctx.drawImage(this.dishLayer(sim), 0, 0, sim.w, sim.h);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(this.terrainLayer(sim), 0, 0);
-      ctx.imageSmoothingEnabled = true;
 
       this.drawMold(ctx, sim.world);
 
@@ -372,22 +275,27 @@
       }
     }
 
+    /* Life colonies: soft round spots. Newborn cells are bright, established ones settle into sage. */
     drawMold(ctx, w) {
       if (!w.moldCount) return;
       const { cols, mold, moldAge } = w;
-      // Dark rims first, then fresh (bright) and established (greyer) cores.
-      ctx.fillStyle = 'rgba(38,84,72,0.85)';
-      ctx.beginPath();
-      for (let i = 0; i < mold.length; i++) if (mold[i]) ctx.rect((i % cols) * TILE + 0.5, Math.floor(i / cols) * TILE + 0.5, TILE - 1, TILE - 1);
-      ctx.fill();
-      ctx.fillStyle = '#f2fbf5';
-      ctx.beginPath();
-      for (let i = 0; i < mold.length; i++) if (mold[i] && moldAge[i] < 4) ctx.rect((i % cols) * TILE + 1.5, Math.floor(i / cols) * TILE + 1.5, TILE - 3, TILE - 3);
-      ctx.fill();
-      ctx.fillStyle = '#b9d6c6';
-      ctx.beginPath();
-      for (let i = 0; i < mold.length; i++) if (mold[i] && moldAge[i] >= 4) ctx.rect((i % cols) * TILE + 1.5, Math.floor(i / cols) * TILE + 1.5, TILE - 3, TILE - 3);
-      ctx.fill();
+      const h = TILE / 2;
+      const pass = (fill, radius, test) => {
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        for (let i = 0; i < mold.length; i++) {
+          if (!mold[i] || !test(moldAge[i])) continue;
+          const x = (i % cols) * TILE + h, y = Math.floor(i / cols) * TILE + h;
+          ctx.moveTo(x + radius, y);
+          ctx.arc(x, y, radius, 0, TAU);
+        }
+        ctx.fill();
+      };
+      const all = () => true;
+      pass('rgba(70,130,110,0.16)', h * 1.35, all); // halo that merges neighbours into colonies
+      pass('rgba(52,110,92,0.9)', h * 0.82, all);
+      pass('#eef8f2', h * 0.5, (a) => a < 3);
+      pass('#a9cdb9', h * 0.42, (a) => a >= 3);
     }
 
     /* Night: darken the bench, then let the cells glow (bioluminescence). */
@@ -396,14 +304,16 @@
       if (dark < 0.02) return;
       ctx.fillStyle = `rgba(14,18,48,${0.62 * dark})`;
       ctx.fillRect(-sim.w, -sim.h, sim.w * 3, sim.h * 3);
+      const glow = Math.max(0, (dark - 0.3) / 0.7); // only glow once it is properly dark
+      if (glow <= 0) return;
       ctx.globalCompositeOperation = 'lighter';
       for (const o of sim.orgs) {
         const flick = 0.75 + 0.25 * Math.sin(now * 0.004 + o.id);
-        ctx.fillStyle = `hsla(${o.hue},90%,55%,${0.3 * dark * flick})`;
+        ctx.fillStyle = `hsla(${o.hue},90%,55%,${0.3 * glow * flick})`;
         ctx.beginPath();
         ctx.arc(o.x, o.y, o.d.radius * 2.4, 0, TAU);
         ctx.fill();
-        ctx.fillStyle = `hsla(${o.hue},100%,80%,${0.45 * dark})`;
+        ctx.fillStyle = `hsla(${o.hue},100%,80%,${0.45 * glow})`;
         ctx.beginPath();
         ctx.arc(o.x, o.y, o.d.radius * 0.8, 0, TAU);
         ctx.fill();

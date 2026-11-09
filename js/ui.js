@@ -4,7 +4,7 @@
   const E = window.Evo;
   const W = window.EvoWorld;
   const C = window.EvoChallenges;
-  const { T, TILE } = W;
+  const { TILE } = W;
   const $ = (s) => document.querySelector(s);
   const SAVE_KEY = 'evo-world-v1';
 
@@ -22,19 +22,15 @@
     { id: 'inspect', name: 'Inspect', hint: 'click a cell to inspect it', icon: svg('<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/>') },
     { id: 'food', name: 'Nutrients', hint: 'sprinkle food grains', brush: true, color: 'rgba(95,120,30,0.9)',
       icon: svg('<circle cx="7" cy="8" r="2" fill="#7f9b2e"/><circle cx="15" cy="6" r="2" fill="#7f9b2e"/><circle cx="12" cy="13" r="2" fill="#7f9b2e"/><circle cx="6" cy="17" r="2" fill="#7f9b2e"/><circle cx="17" cy="16" r="2" fill="#7f9b2e"/>') },
-    { id: 'rock', name: 'Rock', terrain: T.ROCK, hint: "walls cells can't pass", brush: true },
-    { id: 'water', name: 'Water', terrain: T.WATER, hint: 'ponds: cells swim at half speed, nothing grows', brush: true },
-    { id: 'soil', name: 'Soil', terrain: T.SOIL, hint: 'fertile ground: extra food and fresh spores', brush: true },
-    { id: 'toxin', name: 'Toxin', terrain: T.TOXIN, hint: 'drains energy (armor resists) and kills mold', brush: true },
-    { id: 'mold', name: 'Mold', brush: true, color: 'rgba(38,84,72,0.9)',
-      icon: svg('<rect x="3" y="3" width="5" height="5" fill="#b9d6c6"/><rect x="10" y="3" width="5" height="5" fill="#f2fbf5"/><rect x="16" y="10" width="5" height="5" fill="#b9d6c6"/><rect x="3" y="16" width="5" height="5" fill="#f2fbf5"/><rect x="10" y="16" width="5" height="5" fill="#b9d6c6"/><rect x="16" y="16" width="5" height="5" fill="#f2fbf5"/>') },
-    { id: 'erase', name: 'Eraser', hint: 'back to bare agar, scrapes off mold', brush: true,
+    { id: 'mold', name: 'Life', brush: true, color: 'rgba(38,84,72,0.9)',
+      icon: svg('<g stroke="#34705c" stroke-width="1.5" fill="#a9cdb9"><circle cx="6" cy="6" r="3"/><circle cx="12" cy="6" r="3" fill="#eef8f2"/><circle cx="18" cy="12" r="3"/><circle cx="6" cy="18" r="3" fill="#eef8f2"/><circle cx="12" cy="18" r="3"/><circle cx="18" cy="18" r="3" fill="#eef8f2"/></g>') },
+    { id: 'erase', name: 'Scrape', hint: 'scrape Life cells off the agar', brush: true,
       icon: svg('<path d="M4 15l8-8 7 7-6 6H8z" fill="#f3e6bd"/><path d="M9 20h11"/>') },
     { id: 'zap', name: 'UV lamp', hint: 'sterilise: kills every cell under the lamp', brush: true, color: 'rgba(120,80,230,0.9)',
       icon: svg('<path d="M13 2L5 14h6l-1 8 8-12h-6z" fill="#b8a3ff"/>') },
   ];
 
-  const EVENT_LABELS = { bloom: 'Bloom', heat: 'Heat wave', cold: 'Cold snap', meteor: 'Meteor', flood: 'Flood', outbreak: 'Outbreak' };
+  const EVENT_LABELS = { bloom: 'Bloom', heat: 'Heat wave', cold: 'Cold snap', meteor: 'Meteor', outbreak: 'Outbreak' };
 
   const state = {
     mode: 'ecosystem',
@@ -173,7 +169,7 @@
     setModeUI(mode);
     resetWorld({ keepWorld: true });
     note(mode === 'duel'
-      ? 'Duel: build your arena with the hotbar, then start. Two minutes, last lineage standing wins.'
+      ? 'Duel: two species, one dish, two minutes. Shape the Life layer first if you like, then start.'
       : 'Ecosystem: release species into the dish and see who endures.', null);
   }
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
@@ -191,7 +187,7 @@
     updateLegend();
   }
   $('#reset').addEventListener('click', () => resetWorld({ keepWorld: true }));
-  $('#new-world').addEventListener('click', () => { resetWorld({}); note('A freshly poured dish: new terrain generated.', null); });
+  $('#new-world').addEventListener('click', () => { resetWorld({}); note('A freshly poured dish, seeded with new Life colonies.', null); });
   $('#blank-world').addEventListener('click', () => { resetWorld({ blank: true }); note('A blank dish: bare agar, ready to build on.', null); });
 
   let releaseLockUntil = 0;
@@ -264,9 +260,7 @@
     const b = document.createElement('button');
     b.className = 'slot';
     b.title = `${t.name} (${i + 1})`;
-    b.innerHTML = `<span class="num">${i + 1}</span>`;
-    if (t.terrain !== undefined) b.appendChild(renderer.tileIcon(t.terrain, 60));
-    else b.insertAdjacentHTML('beforeend', t.icon);
+    b.innerHTML = `<span class="num">${i + 1}</span>${t.icon}<span class="name">${t.name}</span>`;
     b.addEventListener('click', () => setTool(i));
     hotbar.appendChild(b);
   });
@@ -282,11 +276,11 @@
     const t = TOOLS[state.tool];
     let hint = t.hint;
     if (t.id === 'mold') {
-      hint = state.pattern === 'spray' ? 'spray living spores' : `click to stamp a ${W.PATTERN_NAMES[state.pattern].toLowerCase()}`;
+      hint = state.pattern === 'spray' ? 'paint living cells onto the agar' : `click to stamp a ${W.PATTERN_NAMES[state.pattern].toLowerCase()}`;
     }
     let text = `${t.name}: ${hint}`;
     if (t.brush && !(t.id === 'mold' && state.pattern !== 'spray')) text += ` · brush ${state.brush}`;
-    if (t.id !== 'inspect' && duelRunning()) text = 'Tools are locked while the duel runs. Build your arena before you start.';
+    if (t.id !== 'inspect' && duelRunning()) text = 'Tools are locked while the duel runs.';
     $('#tool-label').textContent = text;
   }
 
@@ -305,10 +299,7 @@
     const throttled = !first && now - lastApply < 80;
     const r = brushRadius();
     const w = sim.world;
-    if (t.terrain !== undefined) {
-      progress.blocks += w.paint(x, y, r, t.terrain);
-    } else if (t.id === 'erase') {
-      w.paint(x, y, r, T.AGAR);
+    if (t.id === 'erase') {
       w.eraseMold(x, y, r);
     } else if (t.id === 'mold') {
       if (state.pattern === 'spray') {
@@ -457,12 +448,13 @@
     const [, b, s] = /B(\d*)\/S(\d*)/.exec(r);
     const list = (d) => (d ? d.split('').join(', ') : 'never');
     $('#rule-help').textContent =
-      `Bare agar sprouts mold with ${list(b)} mold neighbours. A mold cell survives with ${s ? list(s) : 'no'} neighbours, otherwise it dies of loneliness or overcrowding. Cells eat mold when hungry.`;
+      `An empty tile comes alive with ${list(b)} live neighbours. A live cell survives with ${s ? list(s) : 'no'} neighbours, otherwise it dies of loneliness or overcrowding. Hungry creatures graze Life cells.`;
   }
   ruleSel.addEventListener('change', () => {
     sim.world.setRule(ruleSel.value);
+    if (!progress.rules.includes(ruleSel.value)) progress.rules.push(ruleSel.value);
     renderRuleHelp();
-    note(`Mold now follows ${W.RULES[ruleSel.value].label} (${W.RULES[ruleSel.value].rule}).`, 150);
+    note(`Life now follows ${W.RULES[ruleSel.value].label} (${W.RULES[ruleSel.value].rule}).`, 150);
   });
 
   const patSel = $('#pattern');
@@ -498,7 +490,6 @@
     const status = o.alive ? `gen ${o.gen} · ${E.MODE_NAMES[o.mode]}` : `<span class="ins-dead">died · ${o.cause}</span>`;
     const ePct = Math.max(0, Math.min(100, (o.energy / o.d.maxEnergy) * 100));
     const owner = sp.owner === 'player' ? ' (yours)' : sp.owner === 'rival' ? ' (rival)' : '';
-    const ground = W.TERRAIN_NAMES[sim.world.at(o.x, o.y)];
     const crowdPct = Math.round(o.crowd * 6);
     inspector.innerHTML = `
       <div class="ins-head">
@@ -516,7 +507,7 @@
             <output>${o.t[k].toFixed(1)}</output>
           </div>`).join('')}
       </div>
-      <div class="ins-crowd${o.crowd >= 5 ? ' warn' : ''}">${o.crowd} kin nearby${o.crowd ? ` · +${crowdPct}% upkeep` : ''}${o.crowd >= 5 ? ' (crowded)' : ''} · on ${ground}</div>
+      <div class="ins-crowd${o.crowd >= 5 ? ' warn' : ''}">${o.crowd} kin nearby${o.crowd ? ` · +${crowdPct}% upkeep` : ''}${o.crowd >= 5 ? ' (crowded)' : ''}</div>
       <div class="ins-foot">age ${Math.round(o.age / 60)}s · ${o.children} offspring · ${o.kills} kill${o.kills === 1 ? '' : 's'}
         ${o.alive ? ` · <button class="link ins-follow">${state.follow ? 'unfollow' : 'follow (F)'}</button>` : ''}</div>`;
   }
@@ -723,7 +714,7 @@
   function updateLegend() {
     const alive = sim.species.filter((s) => !s.extinct).sort((a, b) => b.count - a.count).slice(0, 7);
     if (!alive.length) {
-      legend.innerHTML = `<li class="empty">${state.mode === 'duel' ? 'Build an arena, then press "Start duel".' : 'The dish is sterile. Release a species.'}</li>`;
+      legend.innerHTML = `<li class="empty">${state.mode === 'duel' ? 'Press "Start duel" to begin.' : 'The dish is sterile. Release a species.'}</li>`;
       return;
     }
     legend.innerHTML = alive.map((s) => {
@@ -829,7 +820,7 @@
   renderRuleHelp();
   renderChallenges();
   clearLog();
-  note('Welcome to the dish. Release a species, then shape the world with the hotbar below.', null);
+  note('Welcome to the dish. The green spots follow Conway\'s Game of Life. Release a species and watch them share the agar.', null);
   updateStats();
   updateLegend();
   requestAnimationFrame(loop);

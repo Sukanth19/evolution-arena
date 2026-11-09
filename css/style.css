@@ -364,34 +364,35 @@ button { font: inherit; color: inherit; }
 }
 .hotbar {
   display: flex;
-  gap: 4px;
-  padding: 5px;
+  gap: 2px;
+  padding: 4px;
   border: 1.5px solid var(--ink);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--card);
   box-shadow: 3px 3px 0 var(--ink);
   pointer-events: auto;
   overflow-x: auto;
   max-width: 100%;
+  scrollbar-width: none;
 }
 .slot {
-  position: relative;
   flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  border: 1.5px solid var(--line);
-  border-radius: 8px;
-  background: var(--card-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: 600 12.5px var(--sans);
   cursor: pointer;
-  display: grid;
-  place-items: center;
-  transition: transform 0.08s;
+  transition: background 0.12s;
 }
-.slot:hover { border-color: var(--ink); }
-.slot.active { border: 2.5px solid var(--accent); transform: translateY(-3px); background: #fff; }
-.slot canvas, .slot svg { width: 30px; height: 30px; image-rendering: pixelated; border-radius: 4px; }
-.slot .num { position: absolute; top: 1px; left: 4px; font: 600 9.5px var(--mono); color: var(--muted); }
+.slot:hover { background: var(--card-2); }
+.slot.active { background: var(--ink); color: var(--card); }
+.slot.active svg * { stroke: var(--card); }
+.slot svg { width: 18px; height: 18px; }
+.slot .num { font: 500 10px var(--mono); opacity: 0.55; }
 .keys { font: 10.5px var(--mono); color: var(--muted); background: rgba(231, 224, 208, 0.75); padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
 .keys kbd { padding: 0 4px; border: 1px solid var(--faint); border-radius: 3px; font: inherit; }
 

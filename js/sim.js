@@ -6,7 +6,7 @@
   'use strict';
 
   const W = root.EvoWorld || (typeof require !== 'undefined' ? require('./world.js') : null);
-  const { World, T, TILE } = W;
+  const { World } = W;
 
   const TRAITS = ['speed', 'size', 'aggression', 'vision', 'armor', 'fertility'];
   const BUDGET = 30;
@@ -24,7 +24,7 @@
   const WORLD_SIZE = 820;
   const DAY_TICKS = 60 * 120; // one full day/night cycle = 2 minutes at 1×
   const MOLD_EVERY = 10; // ticks per mold generation
-  const EVENT_TYPES = ['bloom', 'heat', 'cold', 'meteor', 'flood', 'outbreak'];
+  const EVENT_TYPES = ['bloom', 'heat', 'cold', 'meteor', 'outbreak'];
 
   const WANDER = 0, FORAGE = 1, HUNT = 2, FLEE = 3;
   const MODE_NAMES = ['wandering', 'foraging', 'hunting', 'fleeing'];
@@ -195,24 +195,6 @@
       return [this.cx + Math.cos(a) * r, this.cy + Math.sin(a) * r];
     }
 
-    /* A random spot whose surroundings are mostly open agar/soil — somewhere a colony can start. */
-    safeSpot(frac) {
-      let best = this.randPoint(frac), bestScore = -1;
-      for (let k = 0; k < 30; k++) {
-        const [x, y] = this.randPoint(frac);
-        let good = 0, all = 0;
-        this.world.each(x, y, 36, (i) => {
-          all++;
-          const t = this.world.terrain[i];
-          if (t === T.AGAR || t === T.SOIL) good++;
-        });
-        const score = all ? good / all : 0;
-        if (score > bestScore) { bestScore = score; best = [x, y]; }
-        if (score > 0.92) break;
-      }
-      return best;
-    }
-
     /* Push a point back inside the dish; returns the outward normal if it was outside. */
     keepInside(p, margin) {
       const dx = p.x - this.cx, dy = p.y - this.cy, d = Math.hypot(dx, dy), lim = this.R - margin;
@@ -223,12 +205,12 @@
       return [nx, ny];
     }
 
-    /* opts.keepWorld keeps terrain and mold; opts.blank gives an empty dish instead of generated terrain. */
+    /* opts.keepWorld keeps the mold as it is; opts.blank starts with no mold at all. */
     reset(mode, opts = {}) {
       if (mode) this.mode = mode;
       if (!opts.keepWorld) {
         if (opts.blank) this.world.clear();
-        else this.world.generate();
+        else this.world.seed();
       }
       this.tick = 0;
       this.effects = { heat: 0, cold: 0 };
@@ -273,25 +255,20 @@
       this.events.push(Object.assign({ type, text, hue }, extra));
     }
 
-    /* Food only settles on agar or soil; random placements retry a few times. */
     addFood(x, y) {
-      const random = x === undefined;
-      for (let attempt = 0; attempt < (random ? 4 : 1); attempt++) {
-        if (random) {
-          if (Math.random() < 0.55) {
-            const p = pick(this.patches);
-            x = p.x + gauss() * p.r;
-            y = p.y + gauss() * p.r;
-          } else {
-            [x, y] = this.randPoint(0.98);
-          }
+      if (x === undefined) {
+        if (Math.random() < 0.55) {
+          const p = pick(this.patches);
+          x = p.x + gauss() * p.r;
+          y = p.y + gauss() * p.r;
+        } else {
+          [x, y] = this.randPoint(0.98);
         }
-        const f = { x, y, alive: true };
-        this.keepInside(f, 5);
-        const t = this.world.at(f.x, f.y);
-        if (t === T.AGAR || t === T.SOIL) { this.food.push(f); return f; }
       }
-      return null;
+      const f = { x, y, alive: true };
+      this.keepInside(f, 5);
+      this.food.push(f);
+      return f;
     }
 
     dropFood(x, y, n) {
@@ -368,7 +345,6 @@
         children: 0,
         cause: null,
         crowd: 0,
-        blocked: 0,
         cyst: 0,
       };
     }
@@ -393,7 +369,7 @@
 
     spawnWild(n, quiet) {
       const sp = this.newSpecies(randomTraits(), 'wild', randomName(), this.distinctHue());
-      const [x, y] = this.safeSpot(0.6);
+      const [x, y] = this.randPoint(0.6);
       this.spawnGroup(sp, n, x, y, 40);
       if (!quiet) this.emit('arrive', `${sp.name} migrated into the arena`, sp.hue);
       return sp;
@@ -402,7 +378,7 @@
     release(traits) {
       this.playerReleases++;
       const sp = this.newSpecies(traits, 'player', `Lineage ${roman(this.playerReleases)}`, this.distinctHue(traitHue(traits)));
-      const [x, y] = this.safeSpot(0.55);
+      const [x, y] = this.randPoint(0.55);
       this.spawnGroup(sp, 12, x, y, 30);
       // Fresh releases start inside protective cysts for 5 seconds.
       for (const o of this.orgs) if (o.sp === sp) o.cyst = this.tick + 300;
@@ -443,11 +419,10 @@
       this.spawnFood();
       if (this.tick % MOLD_EVERY === 0) {
         this.world.stepMold();
-        // Fertile soil occasionally throws up fresh spores, so the mold never dies out for good.
-        const soil = this.world.soilTiles();
-        if (soil.length && Math.random() < 0.2) {
-          const [x, y] = this.world.tileCenter(soil[(Math.random() * soil.length) | 0]);
-          this.world.sprayMold(x, y, 14, 0.5);
+        // Stray spores drift in now and then, so the Life layer never dies out for good.
+        if (Math.random() < 0.06) {
+          const [x, y] = this.randPoint(0.85);
+          this.world.sprayMold(x, y, 18, 0.45);
         }
       }
       this.heatMul = this.tick < this.effects.heat ? 1.5 : 1;
@@ -490,18 +465,6 @@
         this.foodAcc -= 1;
         if (this.food.length < cap) this.addFood();
       }
-      // Fertile soil sprouts extra food on top of the normal cap.
-      const soil = this.world.soilTiles();
-      if (soil.length) {
-        this.soilAcc = (this.soilAcc || 0) + soil.length * 0.0011 * daylight;
-        while (this.soilAcc >= 1) {
-          this.soilAcc -= 1;
-          if (this.food.length < cap * 1.4) {
-            const [x, y] = this.world.tileCenter(soil[(Math.random() * soil.length) | 0]);
-            this.addFood(x + rand(-3.5, 3.5), y + rand(-3.5, 3.5));
-          }
-        }
-      }
     }
 
     /* Day/night: light runs 0 (midnight) .. 1 (noon). A new dish starts mid-morning. */
@@ -540,20 +503,17 @@
           if (o.alive && Math.hypot(o.x - x, o.y - y) < 34) { this.kill(o, 'meteor'); killed++; }
         }
         for (const f of this.food) if (Math.hypot(f.x - x, f.y - y) < 34) f.alive = false;
-        w.each(x, y, 44, (i, d) => {
-          if (d > 30 && Math.random() < 0.75) w.set(i, T.ROCK);
-          else if (d <= 30) { w.set(i, T.SOIL); w.setMold(i, 0); }
-        });
-        this.emit('event', `Meteor strike! ${killed} cell${killed === 1 ? '' : 's'} vaporised, leaving a fertile crater`, 15, { x, y, fx: 'meteor' });
-      } else if (type === 'flood') {
-        const [x, y] = this.randPoint(0.6);
-        const r = rand(36, 56);
-        w.each(x, y, r, (i, d) => { if (d < r - Math.random() * 10 && w.terrain[i] !== T.ROCK) w.set(i, T.WATER); });
-        this.emit('event', 'Flash flood: a new pond forms', 205, { x, y, fx: 'flood' });
+        w.eraseMold(x, y, 40);
+        // The impact scatters nutrients around the blast.
+        for (let i = 0; i < 30; i++) {
+          const a = Math.random() * Math.PI * 2, d = rand(38, 60);
+          this.addFood(x + Math.cos(a) * d, y + Math.sin(a) * d);
+        }
+        this.emit('event', `Meteor strike! ${killed} cell${killed === 1 ? '' : 's'} vaporised`, 15, { x, y, fx: 'meteor' });
       } else if (type === 'outbreak') {
         const [x, y] = this.randPoint(0.7);
         w.sprayMold(x, y, 56, 0.45);
-        this.emit('event', 'Mold outbreak: spores bloom across the agar', 150, { x, y, fx: 'outbreak' });
+        this.emit('event', 'Life outbreak: a new colony bursts onto the agar', 150, { x, y, fx: 'outbreak' });
       }
     }
 
@@ -650,12 +610,10 @@
       o.age++;
       if (o.cool > 0) o.cool--;
       if (o.tgt && o.tgt.ti !== undefined && !w.mold[o.tgt.ti]) o.tgt.alive = false;
-      if (o.blocked > 0) o.blocked--;
-      else if ((this.tick + o.id) % 3 === 0 || (o.tgt && !o.tgt.alive)) this.perceive(o);
+      if ((this.tick + o.id) % 3 === 0 || (o.tgt && !o.tgt.alive)) this.perceive(o);
 
       const t = o.tgt;
-      const ground = w.at(o.x, o.y);
-      let dx, dy, sp = d.maxSpeed * this.coldMul * (ground === T.WATER ? 0.55 : 1);
+      let dx, dy, sp = d.maxSpeed * this.coldMul;
       if (o.mode === FLEE && t) {
         dx = o.x - t.x; dy = o.y - t.y;
       } else if ((o.mode === FORAGE || o.mode === HUNT) && t) {
@@ -682,21 +640,8 @@
 
       o.vx += (dx * sp - o.vx) * d.agility;
       o.vy += (dy * sp - o.vy) * d.agility;
-      const px = o.x, py = o.y;
       o.x += o.vx;
       o.y += o.vy;
-      // Rock is solid: slide along it if possible, otherwise bounce off and look elsewhere.
-      if (ground !== T.ROCK && w.at(o.x, o.y) === T.ROCK) {
-        if (w.at(o.x, py) !== T.ROCK) { o.y = py; o.vy *= -0.4; }
-        else if (w.at(px, o.y) !== T.ROCK) { o.x = px; o.vx *= -0.4; }
-        else { o.x = px; o.y = py; o.vx *= -0.6; o.vy *= -0.6; }
-        if (o.mode !== FLEE) {
-          o.mode = WANDER;
-          o.tgt = null;
-          o.heading = Math.atan2(o.vy, o.vx) + gauss() * 0.8;
-          o.blocked = 24;
-        }
-      }
       const r = d.radius;
       const n = this.keepInside(o, r);
       if (n) {
@@ -723,12 +668,9 @@
       // (disease, competition) — keeps any one species from owning the arena.
       const dens = o.sp.count / this.densityK;
       o.energy -= d.baseCost * this.heatMul * (1 + o.crowd * 0.06 + dens * dens * 0.6) + d.moveCost * (o.vx * o.vx + o.vy * o.vy);
-      // Toxin burns; armour helps.
-      const ti = w.idx(o.x, o.y);
-      if (ti >= 0 && w.terrain[ti] === T.TOXIN) o.energy -= 0.16 / (1 + o.t.armor * 0.25);
       if (o.energy > d.maxEnergy) o.energy = d.maxEnergy;
       if (o.cool <= 0 && o.age > 120 && o.energy >= d.maxEnergy * d.reproAt) this.reproduce(o, born);
-      if (o.energy <= 0) this.kill(o, w.terrain[ti] === T.TOXIN ? 'poisoned' : 'starved');
+      if (o.energy <= 0) this.kill(o, 'starved');
       else if (o.age > d.maxAge) this.kill(o, 'old age');
     }
 
@@ -852,7 +794,7 @@
       const live = this.species.filter((s) => !s.extinct);
       const round = (v) => Math.round(v * 100) / 100;
       return {
-        v: 1,
+        v: 2,
         tick: this.tick,
         nextId: this.nextId,
         nextSpeciesId: this.nextSpeciesId,
@@ -873,7 +815,7 @@
     }
 
     deserialize(data) {
-      if (!data || data.v !== 1) return false;
+      if (!data || data.v !== 2) return false;
       this.reset('ecosystem', { blank: true });
       this.orgs = [];
       this.food = [];
