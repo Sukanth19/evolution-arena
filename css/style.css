@@ -289,3 +289,186 @@ button { font: inherit; color: inherit; }
   .hint { display: none; }
   .inspector { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; }
 }
+
+/* ------------------------------------------------------------ sandbox: clock, dock, hotbar */
+
+.clock { display: inline-flex; align-items: center; gap: 7px; min-width: 120px; justify-content: flex-end; }
+.sky {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: var(--sky, #f5c542);
+  box-shadow: inset var(--moon, 0) 0 0 0 #1d2346;
+  transition: background 0.5s;
+}
+
+.banner {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  pointer-events: none;
+}
+.banner-item {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-width: 230px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+  animation: banner-in 0.35s cubic-bezier(.2,1.4,.5,1);
+  transition: opacity 0.5s, transform 0.5s;
+}
+.banner-item.out { opacity: 0; transform: translateX(20px); }
+.banner-item .badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+  font: 700 15px var(--mono);
+}
+.banner-item.event .badge { background: var(--b, #f5c542); color: var(--ink); }
+.banner-item small { display: block; font: 10.5px var(--mono); color: var(--muted); }
+.banner-item b { font-size: 13px; }
+@keyframes banner-in { from { opacity: 0; transform: translateX(30px); } }
+
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+.tool-label {
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(248, 244, 234, 0.88);
+  font: 11.5px var(--mono);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.hotbar {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+  pointer-events: auto;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.slot {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.08s;
+}
+.slot:hover { border-color: var(--ink); }
+.slot.active { border: 2.5px solid var(--accent); transform: translateY(-3px); background: #fff; }
+.slot canvas, .slot svg { width: 30px; height: 30px; image-rendering: pixelated; border-radius: 4px; }
+.slot .num { position: absolute; top: 1px; left: 4px; font: 600 9.5px var(--mono); color: var(--muted); }
+.keys { font: 10.5px var(--mono); color: var(--muted); background: rgba(231, 224, 208, 0.75); padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.keys kbd { padding: 0 4px; border: 1px solid var(--faint); border-radius: 3px; font: inherit; }
+
+.view-ctl {
+  position: absolute;
+  right: 14px;
+  bottom: 70px;
+  display: grid;
+  gap: 4px;
+}
+.view-ctl button {
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--card);
+  font: 600 15px/1 var(--mono);
+  cursor: pointer;
+}
+.view-ctl button:hover { background: var(--ink); color: var(--card); }
+
+/* ------------------------------------------------------------ world card */
+
+.field { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12.5px; }
+.field select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 7px;
+  background: var(--card);
+  font: 12px var(--mono);
+  color: var(--ink);
+}
+.rule-help { margin: 2px 0 12px; font: 11px/1.45 var(--mono); color: var(--muted); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 8px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 15px; height: 15px; }
+.event-btns { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.event-btns button {
+  padding: 4px 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--card-2);
+  font: 11px var(--mono);
+  cursor: pointer;
+}
+.event-btns button:hover { border-color: var(--ink); background: var(--card); }
+.world-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.world-btns .btn { padding: 6px 4px; }
+
+/* ------------------------------------------------------------ challenges */
+
+.challenges { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; max-height: 300px; overflow-y: auto; scrollbar-width: thin; }
+.challenges li { display: grid; grid-template-columns: 22px 1fr; gap: 9px; align-items: start; font-size: 12.5px; color: var(--muted); }
+.challenges li .box {
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--line);
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font: 700 12px var(--mono);
+}
+.challenges li.done { color: var(--ink); }
+.challenges li.done .box { border-color: var(--ink); background: var(--good); color: #fff; }
+.challenges li b { display: block; font-size: 12.5px; }
+.challenges li small { font: 10.5px var(--mono); }
+
+.ins-crowd { margin-top: 6px; font: 11px var(--mono); color: var(--muted); }
+.ins-crowd.warn { color: var(--accent); }
+
+@media (max-width: 860px) {
+  .keys { display: none; }
+  .tool-label { white-space: normal; text-align: center; max-width: 100%; }
+  .banner { left: 12px; right: 12px; justify-items: stretch; }
+  .banner-item { min-width: 0; }
+  .view-ctl { bottom: 84px; }
+}
+
+.link { padding: 0; border: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }

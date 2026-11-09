@@ -17,7 +17,7 @@
       <span class="logo" aria-hidden="true"></span>
       <div>
         <h1>Evolution Arena</h1>
-        <p>a petri-dish ecosystem</p>
+        <p>a petri-dish sandbox</p>
       </div>
     </div>
     <nav class="tabs" role="tablist" aria-label="Game mode">
@@ -25,7 +25,7 @@
       <button class="tab" role="tab" aria-selected="false" data-mode="duel">Duel</button>
     </nav>
     <div class="speed" role="group" aria-label="Simulation speed">
-      <span class="clock" id="clock">t 00:00</span>
+      <span class="clock" id="clock" title="Day and time of day"><i class="sky" id="sky"></i><span id="clock-text">day 1 · 07:12</span></span>
       <button data-speed="0" title="Pause (Space)">pause</button>
       <button data-speed="1" class="active">1×</button>
       <button data-speed="2">2×</button>
@@ -38,7 +38,17 @@
       <canvas id="world"></canvas>
       <div id="inspector" class="inspector" hidden></div>
       <div id="overlay" class="overlay" hidden></div>
-      <p class="hint">click a cell to inspect it · click the agar to add food · space pauses</p>
+      <div id="banner" class="banner" aria-live="polite"></div>
+      <div class="dock">
+        <div class="tool-label" id="tool-label"></div>
+        <div class="hotbar" id="hotbar" role="toolbar" aria-label="Tools"></div>
+        <div class="keys">1–9 tools · drag to use · <kbd>[</kbd><kbd>]</kbd> brush · wheel zoom · WASD / right-drag pan · <kbd>F</kbd> follow · <kbd>Space</kbd> pause</div>
+      </div>
+      <div class="view-ctl">
+        <button id="zoom-in" title="Zoom in (+)">+</button>
+        <button id="zoom-out" title="Zoom out (−)">−</button>
+        <button id="zoom-reset" title="Whole dish (0)">⤢</button>
+      </div>
     </section>
 
     <aside class="side">
@@ -59,7 +69,7 @@
         <div class="actions">
           <button id="release" class="btn btn-main">Release</button>
           <button id="randomize" class="btn btn-quiet" title="Random genome">Shuffle</button>
-          <button id="reset" class="btn btn-quiet" title="Sterilise the dish">Reset</button>
+          <button id="reset" class="btn btn-quiet" title="Clear all creatures but keep the terrain">Reset</button>
         </div>
       </section>
 
@@ -82,20 +92,59 @@
           <div class="tile accent"><span id="s-lineage-label">yours</span><b id="s-lineage">0</b></div>
           <div class="tile"><span>species</span><b id="s-species">0</b></div>
           <div class="tile"><span>food</span><b id="s-food">0</b></div>
+          <div class="tile"><span>mold</span><b id="s-mold">0</b></div>
           <div class="tile" id="duel-tile" hidden><span>time left</span><b id="s-time">2:00</b></div>
         </div>
         <canvas id="chart" class="chart" aria-label="Population over time"></canvas>
         <ul id="legend" class="legend"></ul>
       </section>
 
+      <section class="card world-card">
+        <div class="card-head">
+          <div>
+            <h2>World</h2>
+            <p class="sub" id="world-sub">day 1 · morning</p>
+          </div>
+        </div>
+        <label class="field">
+          <span>Mold rule</span>
+          <select id="rule"></select>
+        </label>
+        <label class="field">
+          <span>Mold tool stamps</span>
+          <select id="pattern"></select>
+        </label>
+        <p class="rule-help" id="rule-help"></p>
+        <label class="check"><input type="checkbox" id="events-on" checked> Random world events</label>
+        <div class="event-btns" id="event-btns"></div>
+        <div class="world-btns">
+          <button class="btn btn-quiet small" id="new-world">New world</button>
+          <button class="btn btn-quiet small" id="blank-world">Blank dish</button>
+          <button class="btn btn-quiet small" id="save-world">Save</button>
+          <button class="btn btn-quiet small" id="load-world">Load</button>
+        </div>
+      </section>
+
       <section class="card">
         <div class="card-head"><h2>Field notes</h2></div>
         <ol id="log" class="log" aria-live="polite"></ol>
       </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Challenges</h2>
+            <p class="sub" id="challenge-sub">0 / 0 complete</p>
+          </div>
+        </div>
+        <ul id="challenges" class="challenges"></ul>
+      </section>
     </aside>
   </div>
 
+  <script src="js/world.js"></script>
   <script src="js/sim.js"></script>
+  <script src="js/challenges.js"></script>
   <script src="js/render.js"></script>
   <script src="js/ui.js"></script>
 </body>
