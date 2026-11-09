@@ -5,9 +5,6 @@
 (function (root) {
   'use strict';
 
-  const W = root.EvoWorld || (typeof require !== 'undefined' ? require('./world.js') : null);
-  const { World } = W;
-
   const TRAITS = ['speed', 'size', 'aggression', 'vision', 'armor', 'fertility'];
   const BUDGET = 30;
   const MAX_TRAIT = 10;
@@ -20,11 +17,7 @@
   const SAMPLE_EVERY = 20;
   const DUEL_TICKS = 60 * 120;
   const CROWD_R2 = 45 * 45;
-  const DENSITY_RATIO = 0.43; // density pressure bites at this fraction of the food cap
-  const WORLD_SIZE = 820;
-  const DAY_TICKS = 60 * 120; // one full day/night cycle = 2 minutes at 1×
-  const MOLD_EVERY = 10; // ticks per mold generation
-  const EVENT_TYPES = ['bloom', 'heat', 'cold', 'meteor', 'outbreak'];
+  const DENSITY_K = 160; // species size where density pressure starts to bite
 
   const WANDER = 0, FORAGE = 1, HUNT = 2, FLEE = 3;
   const MODE_NAMES = ['wandering', 'foraging', 'hunting', 'fleeing'];
@@ -170,56 +163,19 @@
   }
 
   class Sim {
-    constructor(w = WORLD_SIZE, h = WORLD_SIZE) {
-      this.setBounds(w, h);
+    constructor(w, h) {
+      this.w = w;
+      this.h = h;
       this.mode = 'ecosystem';
       this.foodGrid = new Grid(48);
       this.orgGrid = new Grid(64);
       this._q = [];
-      this.world = new World(w, h, this.cx, this.cy, this.R);
-      this.eventsOn = true;
       this.reset('ecosystem');
     }
 
-    /* The world is a round dish centred in a w×h box. */
-    setBounds(w, h) {
-      this.w = w;
-      this.h = h;
-      this.cx = w / 2;
-      this.cy = h / 2;
-      this.R = Math.max(60, Math.min(w, h) / 2 - 26);
-    }
-
-    randPoint(frac) {
-      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * this.R * frac;
-      return [this.cx + Math.cos(a) * r, this.cy + Math.sin(a) * r];
-    }
-
-    /* Push a point back inside the dish; returns the outward normal if it was outside. */
-    keepInside(p, margin) {
-      const dx = p.x - this.cx, dy = p.y - this.cy, d = Math.hypot(dx, dy), lim = this.R - margin;
-      if (d <= lim || d === 0) return null;
-      const nx = dx / d, ny = dy / d;
-      p.x = this.cx + nx * lim;
-      p.y = this.cy + ny * lim;
-      return [nx, ny];
-    }
-
-    /* opts.keepWorld keeps the mold as it is; opts.blank starts with no mold at all. */
-    reset(mode, opts = {}) {
+    reset(mode) {
       if (mode) this.mode = mode;
-      if (!opts.keepWorld) {
-        if (opts.blank) this.world.clear();
-        else this.world.seed();
-      }
       this.tick = 0;
-      this.effects = { heat: 0, cold: 0 };
-      this.heatMul = 1;
-      this.coldMul = 1;
-      this.visionMul = 1;
-      this.light = 1;
-      this.night = false;
-      this.nextEventTick = 60 * 75;
       this.orgs = [];
       this.food = [];
       this.species = [];
@@ -233,10 +189,9 @@
       this.duel = null;
       this.patches = [];
       for (let i = 0; i < 3; i++) {
-        const [px, py] = this.randPoint(0.6);
         this.patches.push({
-          x: px,
-          y: py,
+          x: rand(0.15, 0.85) * this.w,
+          y: rand(0.15, 0.85) * this.h,
           vx: rand(-0.12, 0.12),
           vy: rand(-0.12, 0.12),
           r: rand(60, 110),
@@ -248,7 +203,22 @@
     }
 
     foodCap() {
-      return Math.max(60, Math.floor((Math.PI * this.R * this.R) / 1500));
+      return Math.max(60, Math.floor((this.w * this.h) / 2600));
+    }
+
+    resize(w, h) {
+      this.w = w;
+      this.h = h;
+      for (const o of this.orgs) {
+        o.x = clamp(o.x, 0, w);
+        o.y = clamp(o.y, 0, h);
+      }
+      for (const f of this.food) if (f.x > w || f.y > h) f.alive = false;
+      this.food = this.food.filter((f) => f.alive);
+      for (const p of this.patches) {
+        p.x = clamp(p.x, 0, w);
+        p.y = clamp(p.y, 0, h);
+      }
     }
 
     emit(type, text, hue, extra) {
@@ -262,13 +232,16 @@
           x = p.x + gauss() * p.r;
           y = p.y + gauss() * p.r;
         } else {
-          [x, y] = this.randPoint(0.98);
+          x = rand(0, this.w);
+          y = rand(0, this.h);
         }
       }
-      const f = { x, y, alive: true };
-      this.keepInside(f, 5);
-      this.food.push(f);
-      return f;
+      this.food.push({
+        x: clamp(x, 4, this.w - 4),
+        y: clamp(y, 4, this.h - 4),
+        alive: true,
+        tw: Math.random() * 6.283,
+      });
     }
 
     dropFood(x, y, n) {
@@ -345,7 +318,6 @@
         children: 0,
         cause: null,
         crowd: 0,
-        cyst: 0,
       };
     }
 
@@ -354,13 +326,12 @@
         const o = this.makeOrg(
           sp,
           Object.assign({}, sp.traits),
-          cx + gauss() * spread,
-          cy + gauss() * spread,
+          clamp(cx + gauss() * spread, 6, this.w - 6),
+          clamp(cy + gauss() * spread, 6, this.h - 6),
           derive(sp.traits).maxEnergy * 0.9,
           1,
           (sp.hue + gauss() * 4 + 360) % 360
         );
-        this.keepInside(o, 8);
         this.orgs.push(o);
       }
       sp.count += n;
@@ -369,8 +340,7 @@
 
     spawnWild(n, quiet) {
       const sp = this.newSpecies(randomTraits(), 'wild', randomName(), this.distinctHue());
-      const [x, y] = this.randPoint(0.6);
-      this.spawnGroup(sp, n, x, y, 40);
+      this.spawnGroup(sp, n, rand(0.15, 0.85) * this.w, rand(0.15, 0.85) * this.h, 40);
       if (!quiet) this.emit('arrive', `${sp.name} migrated into the arena`, sp.hue);
       return sp;
     }
@@ -378,23 +348,21 @@
     release(traits) {
       this.playerReleases++;
       const sp = this.newSpecies(traits, 'player', `Lineage ${roman(this.playerReleases)}`, this.distinctHue(traitHue(traits)));
-      const [x, y] = this.randPoint(0.55);
+      const x = rand(0.2, 0.8) * this.w, y = rand(0.2, 0.8) * this.h;
       this.spawnGroup(sp, 12, x, y, 30);
-      // Fresh releases start inside protective cysts for 5 seconds.
-      for (const o of this.orgs) if (o.sp === sp) o.cyst = this.tick + 300;
       this.dropFood(x, y, 24); // a starter cache so newcomers get a foothold
       this.emit('release', `${sp.name} released into the wild`, sp.hue);
       return sp;
     }
 
     startDuel(playerTraits, rivalTraits, rivalName) {
-      this.reset('duel', { keepWorld: true });
+      this.reset('duel');
       const p = this.newSpecies(playerTraits, 'player', 'Your lineage', avoidFoodHue(traitHue(playerTraits)));
       let rh = traitHue(rivalTraits);
       if (Math.abs(hueDiff(rh, p.hue)) < 50) rh = avoidFoodHue(p.hue + 180);
       const r = this.newSpecies(rivalTraits, 'rival', rivalName || randomName(), rh);
-      this.spawnGroup(p, 16, this.cx - this.R * 0.6, this.cy, 30);
-      this.spawnGroup(r, 16, this.cx + this.R * 0.6, this.cy, 30);
+      this.spawnGroup(p, 16, this.w * 0.18, this.h * 0.5, 35);
+      this.spawnGroup(r, 16, this.w * 0.82, this.h * 0.5, 35);
       this.duel = { limit: DUEL_TICKS, over: false, result: null, player: p, rival: r };
       this.emit('duel-start', `Duel begins — ${r.name} enters the arena`, r.hue);
     }
@@ -413,21 +381,8 @@
 
     step() {
       this.tick++;
-      this.densityK = this.foodCap() * DENSITY_RATIO;
-      this.updateSky();
       this.updatePatches();
       this.spawnFood();
-      if (this.tick % MOLD_EVERY === 0) {
-        this.world.stepMold();
-        // Stray spores drift in now and then, so the Life layer never dies out for good.
-        if (Math.random() < 0.06) {
-          const [x, y] = this.randPoint(0.85);
-          this.world.sprayMold(x, y, 18, 0.45);
-        }
-      }
-      this.heatMul = this.tick < this.effects.heat ? 1.5 : 1;
-      this.coldMul = this.tick < this.effects.cold ? 0.62 : 1;
-      this.visionMul = 0.6 + 0.4 * this.light;
       this.foodGrid.rebuild(this.food, this.w, this.h);
       this.orgGrid.rebuild(this.orgs, this.w, this.h);
 
@@ -444,104 +399,30 @@
 
     updatePatches() {
       for (const p of this.patches) {
-        p.vx = clamp(p.vx + gauss() * 0.004, -0.2, 0.2);
-        p.vy = clamp(p.vy + gauss() * 0.004, -0.2, 0.2);
+        p.vx += gauss() * 0.004;
+        p.vy += gauss() * 0.004;
+        p.vx = clamp(p.vx, -0.2, 0.2);
+        p.vy = clamp(p.vy, -0.2, 0.2);
         p.x += p.vx;
         p.y += p.vy;
-        const n = this.keepInside(p, this.R * 0.35);
-        if (n) {
-          const vn = p.vx * n[0] + p.vy * n[1];
-          p.vx -= 2 * vn * n[0];
-          p.vy -= 2 * vn * n[1];
-        }
+        if (p.x < this.w * 0.1 || p.x > this.w * 0.9) p.vx = -p.vx;
+        if (p.y < this.h * 0.1 || p.y > this.h * 0.9) p.vy = -p.vy;
+        p.x = clamp(p.x, this.w * 0.1, this.w * 0.9);
+        p.y = clamp(p.y, this.h * 0.1, this.h * 0.9);
       }
     }
 
     spawnFood() {
       const cap = this.foodCap();
-      const daylight = 0.35 + 0.65 * this.light; // plants grow slower at night
-      this.foodAcc += (cap / 320) * 0.85 * daylight;
+      this.foodAcc += (cap / 320) * 0.85;
       while (this.foodAcc >= 1) {
         this.foodAcc -= 1;
         if (this.food.length < cap) this.addFood();
       }
     }
 
-    /* Day/night: light runs 0 (midnight) .. 1 (noon). A new dish starts mid-morning. */
-    dayPhase() {
-      return (this.tick / DAY_TICKS + 0.3) % 1;
-    }
-    dayNumber() {
-      return Math.floor(this.tick / DAY_TICKS + 0.3) + 1;
-    }
-    updateSky() {
-      this.light = 0.5 - 0.5 * Math.cos(this.dayPhase() * Math.PI * 2);
-      const night = this.light < 0.25;
-      if (night !== this.night && this.tick > 1) {
-        this.emit('sky', night ? 'Night falls. Food grows slowly and eyes see less' : `Dawn of day ${this.dayNumber()}`, night ? 240 : 45);
-      }
-      this.night = night;
-    }
-
-    /* ---------------------------------------------------------------- world events */
-
-    triggerEvent(type) {
-      const w = this.world;
-      if (type === 'bloom') {
-        for (let i = 0; i < 140; i++) this.addFood();
-        this.emit('event', 'Nutrient bloom: food rains across the dish', 80);
-      } else if (type === 'heat') {
-        this.effects.heat = this.tick + 1500;
-        this.emit('event', 'Heat wave: every cell burns energy 50% faster', 20);
-      } else if (type === 'cold') {
-        this.effects.cold = this.tick + 1500;
-        this.emit('event', 'Cold snap: everything slows down', 205);
-      } else if (type === 'meteor') {
-        const [x, y] = this.randPoint(0.75);
-        let killed = 0;
-        for (const o of this.orgs) {
-          if (o.alive && Math.hypot(o.x - x, o.y - y) < 34) { this.kill(o, 'meteor'); killed++; }
-        }
-        for (const f of this.food) if (Math.hypot(f.x - x, f.y - y) < 34) f.alive = false;
-        w.eraseMold(x, y, 40);
-        // The impact scatters nutrients around the blast.
-        for (let i = 0; i < 30; i++) {
-          const a = Math.random() * Math.PI * 2, d = rand(38, 60);
-          this.addFood(x + Math.cos(a) * d, y + Math.sin(a) * d);
-        }
-        this.emit('event', `Meteor strike! ${killed} cell${killed === 1 ? '' : 's'} vaporised`, 15, { x, y, fx: 'meteor' });
-      } else if (type === 'outbreak') {
-        const [x, y] = this.randPoint(0.7);
-        w.sprayMold(x, y, 56, 0.45);
-        this.emit('event', 'Life outbreak: a new colony bursts onto the agar', 150, { x, y, fx: 'outbreak' });
-      }
-    }
-
-    maybeRandomEvent() {
-      if (!this.eventsOn || this.mode !== 'ecosystem' || this.tick < this.nextEventTick) return;
-      this.nextEventTick = this.tick + 60 * rand(60, 110);
-      this.triggerEvent(pick(EVENT_TYPES));
-    }
-
-    /* UV lamp: sterilises everything in a radius. */
-    zap(x, y, radius) {
-      let n = 0;
-      for (const o of this.orgs) if (o.alive && Math.hypot(o.x - x, o.y - y) < radius + o.d.radius) { this.kill(o, 'UV light'); n++; }
-      for (const f of this.food) if (Math.hypot(f.x - x, f.y - y) < radius) f.alive = false;
-      this.world.eraseMold(x, y, radius);
-      return n;
-    }
-
-    grazeMold(o, i) {
-      const w = this.world;
-      if (i >= 0 && w.mold[i]) {
-        w.setMold(i, 0);
-        o.energy += o.d.foodGain * 0.4;
-      }
-    }
-
     perceive(o) {
-      const d = o.d, r = d.vision * this.visionMul, r2 = r * r;
+      const d = o.d, r = d.vision, r2 = r * r;
       let food = null, fd = r2, threat = null, td = r2, prey = null, pd = r2;
 
       const fq = this.foodGrid.query(o.x, o.y, r, this._q);
@@ -570,29 +451,9 @@
           td = dd; threat = p;
         }
         // Could I hunt p without getting wrecked?
-        if (d.hunter && dd < pd && pd2.radius <= d.radius * 1.2 && !(p.cyst > this.tick) &&
+        if (d.hunter && dd < pd && pd2.radius <= d.radius * 1.2 &&
             pd2.attack * d.defense < d.attack * pd2.defense * 1.5) {
           pd = dd; prey = p;
-        }
-      }
-
-      // No grains in sight and getting hungry? Look for a patch of mold to graze.
-      if (!food && this.world.moldCount > 0 && o.energy < d.maxEnergy * 0.45) {
-        const w = this.world;
-        let best = -1, bd = r2;
-        for (let k = 0; k < 10; k++) {
-          const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * r;
-          const i = w.idx(o.x + Math.cos(a) * rr, o.y + Math.sin(a) * rr);
-          if (i >= 0 && w.mold[i]) {
-            const [mx, my] = w.tileCenter(i);
-            const dd = (mx - o.x) ** 2 + (my - o.y) ** 2;
-            if (dd < bd) { bd = dd; best = i; }
-          }
-        }
-        if (best >= 0) {
-          const [mx, my] = w.tileCenter(best);
-          food = { x: mx, y: my, alive: true, ti: best };
-          fd = bd;
         }
       }
 
@@ -606,14 +467,12 @@
 
     updateOrg(o, born) {
       const d = o.d;
-      const w = this.world;
       o.age++;
       if (o.cool > 0) o.cool--;
-      if (o.tgt && o.tgt.ti !== undefined && !w.mold[o.tgt.ti]) o.tgt.alive = false;
       if ((this.tick + o.id) % 3 === 0 || (o.tgt && !o.tgt.alive)) this.perceive(o);
 
       const t = o.tgt;
-      let dx, dy, sp = d.maxSpeed * this.coldMul;
+      let dx, dy, sp = d.maxSpeed;
       if (o.mode === FLEE && t) {
         dx = o.x - t.x; dy = o.y - t.y;
       } else if ((o.mode === FORAGE || o.mode === HUNT) && t) {
@@ -627,13 +486,12 @@
       let len = Math.hypot(dx, dy) || 1;
       dx /= len; dy /= len;
 
-      // Soft wall: steer away from the dish rim.
-      const ox = o.x - this.cx, oy = o.y - this.cy, od = Math.hypot(ox, oy) || 1, edge = this.R - 28;
-      if (od > edge) {
-        const k = (od - edge) / 28;
-        dx -= (ox / od) * k;
-        dy -= (oy / od) * k;
-      }
+      // Soft walls.
+      const m = 28;
+      if (o.x < m) dx += (m - o.x) / m;
+      else if (o.x > this.w - m) dx -= (o.x - this.w + m) / m;
+      if (o.y < m) dy += (m - o.y) / m;
+      else if (o.y > this.h - m) dy -= (o.y - this.h + m) / m;
       len = Math.hypot(dx, dy) || 1;
       dx /= len; dy /= len;
       if (o.mode === WANDER) o.heading = Math.atan2(dy, dx);
@@ -643,21 +501,16 @@
       o.x += o.vx;
       o.y += o.vy;
       const r = d.radius;
-      const n = this.keepInside(o, r);
-      if (n) {
-        const vn = o.vx * n[0] + o.vy * n[1];
-        if (vn > 0) { o.vx -= 2 * vn * n[0]; o.vy -= 2 * vn * n[1]; }
-      }
+      if (o.x < r) { o.x = r; o.vx = Math.abs(o.vx); }
+      else if (o.x > this.w - r) { o.x = this.w - r; o.vx = -Math.abs(o.vx); }
+      if (o.y < r) { o.y = r; o.vy = Math.abs(o.vy); }
+      else if (o.y > this.h - r) { o.y = this.h - r; o.vy = -Math.abs(o.vy); }
 
       if (t && t.alive) {
         const ddx = t.x - o.x, ddy = t.y - o.y, dist2 = ddx * ddx + ddy * ddy;
         if (o.mode === FORAGE) {
           const rr = r + 3;
-          if (dist2 < rr * rr) {
-            if (t.ti !== undefined) this.grazeMold(o, t.ti);
-            else o.energy += d.foodGain;
-            t.alive = false;
-          }
+          if (dist2 < rr * rr) { t.alive = false; o.energy += d.foodGain; }
         } else if (o.mode === HUNT) {
           const rr = r + t.d.radius + 1.5;
           if (dist2 < rr * rr) this.bite(o, t);
@@ -666,8 +519,8 @@
 
       // Crowding: local clumps and globally abundant species burn extra energy
       // (disease, competition) — keeps any one species from owning the arena.
-      const dens = o.sp.count / this.densityK;
-      o.energy -= d.baseCost * this.heatMul * (1 + o.crowd * 0.06 + dens * dens * 0.6) + d.moveCost * (o.vx * o.vx + o.vy * o.vy);
+      const dens = o.sp.count / DENSITY_K;
+      o.energy -= d.baseCost * (1 + o.crowd * 0.06 + dens * dens * 0.6) + d.moveCost * (o.vx * o.vx + o.vy * o.vy);
       if (o.energy > d.maxEnergy) o.energy = d.maxEnergy;
       if (o.cool <= 0 && o.age > 120 && o.energy >= d.maxEnergy * d.reproAt) this.reproduce(o, born);
       if (o.energy <= 0) this.kill(o, 'starved');
@@ -707,7 +560,7 @@
     kill(o, cause) {
       o.alive = false;
       o.cause = cause;
-      if (cause !== 'eaten' && cause !== 'UV light' && cause !== 'meteor' && Math.random() < 0.6) this.addFood(o.x, o.y);
+      if (cause !== 'eaten' && Math.random() < 0.6) this.addFood(o.x, o.y);
     }
 
     bookkeeping() {
@@ -747,7 +600,6 @@
       }
 
       if (this.duel && !this.duel.over) this.checkDuel();
-      this.maybeRandomEvent();
     }
 
     checkDuel() {
@@ -783,73 +635,12 @@
         player,
         species: this.species.filter((s) => !s.extinct).length,
         food: this.food.length,
-        mold: this.world.moldCount,
-        day: this.dayNumber(),
       };
-    }
-
-    /* ---------------------------------------------------------------- save / load */
-
-    serialize() {
-      const live = this.species.filter((s) => !s.extinct);
-      const round = (v) => Math.round(v * 100) / 100;
-      return {
-        v: 2,
-        tick: this.tick,
-        nextId: this.nextId,
-        nextSpeciesId: this.nextSpeciesId,
-        playerReleases: this.playerReleases,
-        genMilestone: this.genMilestone,
-        eventsOn: this.eventsOn,
-        effects: this.effects,
-        nextEventTick: this.nextEventTick,
-        patches: this.patches,
-        world: this.world.serialize(),
-        food: this.food.filter((f) => f.alive).flatMap((f) => [round(f.x), round(f.y)]),
-        species: live.map((s) => ({ id: s.id, name: s.name, owner: s.owner, hue: s.hue, traits: s.traits, maxGen: s.maxGen, peak: s.peak, bornTick: s.bornTick })),
-        orgs: this.orgs.map((o) => ({
-          sp: o.sp.id, t: Object.fromEntries(TRAITS.map((k) => [k, round(o.t[k])])), x: round(o.x), y: round(o.y),
-          vx: round(o.vx), vy: round(o.vy), e: round(o.energy), age: o.age, gen: o.gen, hue: round(o.hue), kills: o.kills, children: o.children,
-        })),
-      };
-    }
-
-    deserialize(data) {
-      if (!data || data.v !== 2) return false;
-      this.reset('ecosystem', { blank: true });
-      this.orgs = [];
-      this.food = [];
-      this.species = [];
-      if (!this.world.deserialize(data.world)) return false;
-      Object.assign(this, {
-        tick: data.tick, nextId: data.nextId, nextSpeciesId: data.nextSpeciesId, playerReleases: data.playerReleases,
-        genMilestone: data.genMilestone, eventsOn: data.eventsOn, effects: data.effects, nextEventTick: data.nextEventTick,
-        patches: data.patches,
-      });
-      for (let i = 0; i < data.food.length; i += 2) this.food.push({ x: data.food[i], y: data.food[i + 1], alive: true });
-      const byId = new Map();
-      for (const s of data.species) {
-        const sp = Object.assign({ count: 0, extinct: false, hist: [], histStart: this.sampleIdx }, s);
-        this.species.push(sp);
-        byId.set(s.id, sp);
-      }
-      for (const q of data.orgs) {
-        const sp = byId.get(q.sp);
-        if (!sp) continue;
-        const o = this.makeOrg(sp, q.t, q.x, q.y, q.e, q.gen, q.hue);
-        Object.assign(o, { id: o.id, vx: q.vx, vy: q.vy, age: q.age, kills: q.kills, children: q.children });
-        this.orgs.push(o);
-        sp.count++;
-      }
-      this.updateSky();
-      this.night = this.light < 0.25;
-      this.events.length = 0;
-      return true;
     }
   }
 
   const Evo = {
-    Sim, TRAITS, BUDGET, MAX_TRAIT, TRAIT_HUES, FOOD_HUE, MODE_NAMES, HISTORY_MAX, DUEL_TICKS, DAY_TICKS, WORLD_SIZE, EVENT_TYPES,
+    Sim, TRAITS, BUDGET, MAX_TRAIT, TRAIT_HUES, FOOD_HUE, MODE_NAMES, HISTORY_MAX, DUEL_TICKS,
     derive, traitHue, randomTraits, randomName, sumTraits, normalizeTraits,
   };
   root.Evo = Evo;

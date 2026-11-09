@@ -4,147 +4,71 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Evolution Arena</title>
-  <meta name="description" content="Design a species, release it into a petri-dish ecosystem, and watch natural selection decide whether it survives.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23f3e6bd' stroke='%231d2326' stroke-width='2'/%3E%3Cellipse cx='15' cy='16' rx='6' ry='4.5' fill='%23d9462b' stroke='%231d2326' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='1.8' fill='%231d2326'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="description" content="Design a species, release it into a living ecosystem, and watch natural selection decide whether it survives.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2305070d'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%2367e3f9' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ffffff'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="title">
-      <span class="logo" aria-hidden="true"></span>
-      <div>
-        <h1>Evolution Arena</h1>
-        <p>evolution meets the game of life</p>
-      </div>
-    </div>
-    <nav class="tabs" role="tablist" aria-label="Game mode">
-      <button class="tab active" role="tab" aria-selected="true" data-mode="ecosystem">Ecosystem</button>
-      <button class="tab" role="tab" aria-selected="false" data-mode="duel">Duel</button>
-    </nav>
-    <div class="speed" role="group" aria-label="Simulation speed">
-      <span class="clock" id="clock" title="Day and time of day"><i class="sky" id="sky"></i><span id="clock-text">day 1 · 07:12</span></span>
-      <button data-speed="0" title="Pause (Space)">pause</button>
-      <button data-speed="1" class="active">1×</button>
-      <button data-speed="2">2×</button>
-      <button data-speed="4">4×</button>
-    </div>
-  </header>
+  <div class="app">
+    <aside class="panel" aria-label="Controls">
+      <h1 class="brand">Evolution Arena</h1>
 
-  <div class="main">
-    <section class="bench" id="stage" aria-label="Petri dish">
-      <canvas id="world"></canvas>
-      <div id="inspector" class="inspector" hidden></div>
-      <div id="overlay" class="overlay" hidden></div>
-      <div id="banner" class="banner" aria-live="polite"></div>
-      <div class="dock">
-        <div class="tool-label" id="tool-label"></div>
-        <div class="hotbar" id="hotbar" role="toolbar" aria-label="Tools"></div>
-        <div class="keys">1–5 tools · <kbd>[</kbd><kbd>]</kbd> brush · wheel zoom · WASD / right-drag pan · <kbd>F</kbd> follow · <kbd>Space</kbd> pause</div>
+      <div class="seg" role="tablist" aria-label="Game mode">
+        <button class="seg-btn active" role="tab" aria-selected="true" data-mode="ecosystem">Ecosystem</button>
+        <button class="seg-btn" role="tab" aria-selected="false" data-mode="duel">Duel</button>
       </div>
-      <div class="view-ctl">
-        <button id="zoom-in" title="Zoom in (+)">+</button>
-        <button id="zoom-out" title="Zoom out (−)">−</button>
-        <button id="zoom-reset" title="Whole dish (0)">⤢</button>
+
+      <canvas id="preview" class="preview" aria-label="Preview of your species"></canvas>
+
+      <div class="traits-head">
+        <span>Traits <button class="link" id="randomize" title="Random build">shuffle</button></span>
+        <span><b id="points-left">0</b> left</span>
       </div>
-    </section>
+      <div id="sliders"></div>
 
-    <aside class="side">
-      <section class="card genome">
-        <div class="card-head">
-          <div>
-            <h2>Genome</h2>
-            <p class="sub" id="genome-sub">design your species</p>
-          </div>
-          <canvas id="specimen" class="specimen" aria-label="Your species"></canvas>
-        </div>
-        <div class="budget">
-          <span>points</span>
-          <div class="budget-bar"><b id="budget-fill"></b></div>
-          <span class="mono"><b id="points-used">30</b>/30</span>
-        </div>
-        <div id="traits" class="traits"></div>
-        <div class="actions">
-          <button id="release" class="btn btn-main">Release</button>
-          <button id="randomize" class="btn btn-quiet" title="Random genome">Shuffle</button>
-          <button id="reset" class="btn btn-quiet" title="Clear all creatures but keep the terrain">Reset</button>
-        </div>
-      </section>
-
-      <section id="rival" class="card rival" hidden>
-        <div class="card-head">
-          <div>
-            <h2>Rival</h2>
-            <p class="sub" id="rival-name"></p>
-          </div>
-          <button class="btn btn-quiet small" id="reroll">New rival</button>
+      <section id="rival" class="rival" hidden>
+        <div class="sub-head">
+          <span>Rival · <em id="rival-name"></em></span>
+          <button class="link" id="reroll">new rival</button>
         </div>
         <div id="rival-bars" class="rival-bars"></div>
       </section>
 
-      <section class="card">
-        <div class="card-head"><h2>Census</h2></div>
-        <div class="tiles">
-          <div class="tile"><span>cells</span><b id="s-orgs">0</b></div>
-          <div class="tile"><span>max gen</span><b id="s-gen">0</b></div>
-          <div class="tile accent"><span id="s-lineage-label">yours</span><b id="s-lineage">0</b></div>
-          <div class="tile"><span>species</span><b id="s-species">0</b></div>
-          <div class="tile"><span>food</span><b id="s-food">0</b></div>
-          <div class="tile"><span>life cells</span><b id="s-mold">0</b></div>
-          <div class="tile" id="duel-tile" hidden><span>time left</span><b id="s-time">2:00</b></div>
-        </div>
-        <canvas id="chart" class="chart" aria-label="Population over time"></canvas>
-        <ul id="legend" class="legend"></ul>
-      </section>
+      <button id="release" class="primary">Release</button>
+      <button id="reset" class="ghost">Reset world</button>
 
-      <section class="card world-card">
-        <div class="card-head">
-          <div>
-            <h2>World</h2>
-            <p class="sub" id="world-sub">day 1 · morning</p>
-          </div>
-        </div>
-        <label class="field">
-          <span>Life rule</span>
-          <select id="rule"></select>
-        </label>
-        <label class="field">
-          <span>Life tool</span>
-          <select id="pattern"></select>
-        </label>
-        <p class="rule-help" id="rule-help"></p>
-        <label class="check"><input type="checkbox" id="events-on" checked> Random world events</label>
-        <div class="event-btns" id="event-btns"></div>
-        <div class="world-btns">
-          <button class="btn btn-quiet small" id="new-world">New dish</button>
-          <button class="btn btn-quiet small" id="blank-world">Blank dish</button>
-          <button class="btn btn-quiet small" id="save-world">Save</button>
-          <button class="btn btn-quiet small" id="load-world">Load</button>
-        </div>
-      </section>
+      <dl class="stats">
+        <div><dt>Organisms</dt><dd id="s-orgs">0</dd></div>
+        <div><dt>Generation</dt><dd id="s-gen">0</dd></div>
+        <div><dt id="s-lineage-label">Your lineage</dt><dd id="s-lineage">0</dd></div>
+        <div><dt>Species</dt><dd id="s-species">0</dd></div>
+        <div><dt>Food</dt><dd id="s-food">0</dd></div>
+        <div id="duel-row" hidden><dt>Time left</dt><dd id="s-time">2:00</dd></div>
+      </dl>
 
-      <section class="card">
-        <div class="card-head"><h2>Field notes</h2></div>
-        <ol id="log" class="log" aria-live="polite"></ol>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>Challenges</h2>
-            <p class="sub" id="challenge-sub">0 / 0 complete</p>
-          </div>
-        </div>
-        <ul id="challenges" class="challenges"></ul>
-      </section>
+      <div class="sub-head"><span>Population</span></div>
+      <canvas id="chart" class="chart" aria-label="Population over time"></canvas>
+      <ul id="legend" class="legend"></ul>
     </aside>
+
+    <main class="stage" id="stage">
+      <canvas id="world" aria-label="The arena"></canvas>
+      <div id="toasts" class="toasts" aria-live="polite"></div>
+      <div id="inspector" class="inspector" hidden></div>
+      <div id="overlay" class="overlay" hidden></div>
+      <div class="hud">
+        <span class="hint">Click a creature to inspect · click empty space to drop food · <kbd>Space</kbd> pause</span>
+        <div class="speed" role="group" aria-label="Simulation speed">
+          <button data-speed="0" title="Pause">❚❚</button>
+          <button data-speed="1" class="active">1×</button>
+          <button data-speed="2">2×</button>
+          <button data-speed="4">4×</button>
+        </div>
+      </div>
+    </main>
   </div>
 
-  <script src="js/world.js"></script>
   <script src="js/sim.js"></script>
-  <script src="js/challenges.js"></script>
   <script src="js/render.js"></script>
   <script src="js/ui.js"></script>
 </body>
