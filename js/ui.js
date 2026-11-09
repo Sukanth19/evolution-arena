@@ -5,12 +5,12 @@
   const $ = (s) => document.querySelector(s);
 
   const TRAIT_META = {
-    speed:      { label: 'Speed',      color: '#f6b26b', tip: 'Faster movement — but energy cost grows with the square of speed.' },
-    size:       { label: 'Size',       color: '#a78bfa', tip: 'Bigger bodies store more energy and hit harder, but cost more and turn slower.' },
-    aggression: { label: 'Aggression', color: '#f87171', tip: '4+ makes a hunter that eats other species. Hunters digest plants poorly.' },
-    vision:     { label: 'Vision',     color: '#5ee0f5', tip: 'How far it can see food, prey and threats. Costs upkeep.' },
-    armor:      { label: 'Armor',      color: '#9aa7b8', tip: 'Reduces damage taken and spines hurt attackers. Heavy to carry.' },
-    fertility:  { label: 'Fertility',  color: '#f472b6', tip: 'Breeds sooner and more often, sometimes twins — with smaller energy reserves.' },
+    speed:      { label: 'Speed',      short: 'move',     color: '#e39b2d', tip: 'Faster movement — but energy cost grows with the square of speed.' },
+    size:       { label: 'Size',       short: 'mass',     color: '#8a6ad8', tip: 'Bigger bodies store more energy and hit harder, but cost more and turn slower.' },
+    aggression: { label: 'Aggression', short: '4+ hunts', color: '#d9462b', tip: '4+ makes a hunter that eats other species. Hunters digest plants poorly.' },
+    vision:     { label: 'Vision',     short: 'sight',    color: '#2a9bb5', tip: 'How far it can see food, prey and threats. Costs upkeep.' },
+    armor:      { label: 'Armor',      short: 'shell',    color: '#7a8590', tip: 'Reduces damage taken and spines hurt attackers. Heavy to carry.' },
+    fertility:  { label: 'Fertility',  short: 'breed',    color: '#cf4f8c', tip: 'Breeds sooner and more often, sometimes twins — with smaller energy reserves.' },
   };
 
   const state = {
@@ -21,7 +21,7 @@
     speed: 1,
     paused: false,
     selected: null,
-    releaseLock: 0,
+    locked: false,
   };
 
   const stage = $('#stage');
@@ -29,50 +29,71 @@
   const renderer = new window.EvoRenderer(canvas);
   const sim = new E.Sim(Math.max(200, stage.clientWidth), Math.max(200, stage.clientHeight));
 
-  /* ------------------------------------------------------------ sliders */
+  const fmtTime = (ticks) => {
+    const s = Math.floor(ticks / 60);
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const pipsHTML = (v, interactive) =>
+    `<div class="pips">${Array.from({ length: E.MAX_TRAIT }, (_, i) =>
+      `<button class="pip${i < v ? ' on' : ''}" ${interactive ? `data-v="${i + 1}" aria-label="Set to ${i + 1}"` : 'tabindex="-1" aria-hidden="true"'}></button>`).join('')}</div>`;
 
-  const sliderEls = {};
-  for (const k of E.TRAITS) {
-    const m = TRAIT_META[k];
-    const row = document.createElement('label');
-    row.className = 'slider';
-    row.style.setProperty('--c', m.color);
-    row.title = m.tip;
-    row.innerHTML = `<span class="slider-top"><span>${m.label}</span><span class="val"></span></span>
-      <input type="range" min="0" max="${E.MAX_TRAIT}" step="1" aria-label="${m.label}">`;
-    const input = row.querySelector('input');
-    input.value = state.traits[k];
-    input.addEventListener('input', () => {
-      const others = E.sumTraits(state.traits) - state.traits[k];
-      let v = +input.value;
-      const max = E.BUDGET - others;
-      if (v > max) { v = max; input.value = v; }
-      state.traits[k] = v;
-      refreshTraits();
-    });
-    sliderEls[k] = { input, val: row.querySelector('.val') };
-    $('#sliders').appendChild(row);
+  /* ------------------------------------------------------------ genome editor */
+
+  const traitsEl = $('#traits');
+  function setTrait(k, v) {
+    if (state.locked) return;
+    const others = E.sumTraits(state.traits) - state.traits[k];
+    state.traits[k] = Math.max(0, Math.min(E.MAX_TRAIT, v, E.BUDGET - others));
+    renderTraits();
   }
 
-  function refreshTraits() {
-    for (const k of E.TRAITS) {
-      const el = sliderEls[k];
-      el.input.value = state.traits[k];
-      el.val.textContent = state.traits[k];
-      el.input.style.setProperty('--p', (state.traits[k] / E.MAX_TRAIT) * 100 + '%');
+  function renderTraits() {
+    const used = E.sumTraits(state.traits);
+    const left = E.BUDGET - used;
+    traitsEl.innerHTML = E.TRAITS.map((k) => {
+      const m = TRAIT_META[k], v = state.traits[k];
+      return `<div class="trait" data-k="${k}" style="--c:${m.color}" title="${m.tip}">
+        <span class="trait-name">${m.label} <small>${m.short}</small></span>
+        <div class="stepper">
+          <button data-d="-1" aria-label="Less ${m.label}" ${state.locked || v <= 0 ? 'disabled' : ''}>−</button>
+          <output>${v}</output>
+          <button data-d="1" aria-label="More ${m.label}" ${state.locked || v >= E.MAX_TRAIT || left <= 0 ? 'disabled' : ''}>+</button>
+        </div>
+        ${pipsHTML(v, true)}
+      </div>`;
+    }).join('');
+    if (state.locked) traitsEl.querySelectorAll('.pip').forEach((p) => (p.disabled = true));
+    $('#points-used').textContent = used;
+    $('#budget-fill').style.width = (used / E.BUDGET) * 100 + '%';
+    $('.budget').classList.toggle('full', left === 0);
+    $('#genome-sub').textContent = state.locked
+      ? 'locked during the duel'
+      : left > 0 ? `${left} point${left === 1 ? '' : 's'} unspent` : 'all points spent';
+  }
+
+  traitsEl.addEventListener('click', (e) => {
+    const row = e.target.closest('.trait');
+    if (!row) return;
+    const k = row.dataset.k;
+    const step = e.target.closest('[data-d]');
+    const pip = e.target.closest('.pip');
+    if (step) setTrait(k, state.traits[k] + +step.dataset.d);
+    else if (pip) {
+      const v = +pip.dataset.v;
+      setTrait(k, v === state.traits[k] ? v - 1 : v); // click the top pip again to lower it
     }
-    $('#points-left').textContent = E.BUDGET - E.sumTraits(state.traits);
-  }
+  });
 
-  function lockSliders(locked) {
-    for (const k of E.TRAITS) sliderEls[k].input.disabled = locked;
+  function lock(locked) {
+    state.locked = locked;
     $('#randomize').disabled = locked;
     $('#reroll').disabled = locked;
+    renderTraits();
   }
 
   $('#randomize').addEventListener('click', () => {
     state.traits = E.randomTraits();
-    refreshTraits();
+    renderTraits();
   });
 
   /* ------------------------------------------------------------ rival */
@@ -80,9 +101,8 @@
   function renderRival() {
     $('#rival-name').textContent = state.rivalName;
     $('#rival-bars').innerHTML = E.TRAITS.map((k) => {
-      const m = TRAIT_META[k], v = state.rival[k];
-      return `<div class="rbar" style="--c:${m.color}"><span>${m.label}</span>
-        <div class="track"><b style="width:${v * 10}%"></b></div><span>${v}</span></div>`;
+      const m = TRAIT_META[k];
+      return `<div class="rbar" style="--c:${m.color}"><span>${m.label}</span>${pipsHTML(state.rival[k], false)}<output>${state.rival[k]}</output></div>`;
     }).join('');
   }
 
@@ -92,68 +112,62 @@
     renderRival();
   }
 
-  $('#reroll').addEventListener('click', () => {
-    newRival();
-    resetWorld();
-  });
+  $('#reroll').addEventListener('click', () => { newRival(); resetWorld(); });
 
   /* ------------------------------------------------------------ modes */
 
   function setMode(mode) {
     if (state.mode === mode) return;
     state.mode = mode;
-    document.querySelectorAll('.seg-btn').forEach((b) => {
+    document.querySelectorAll('.tab').forEach((b) => {
       const on = b.dataset.mode === mode;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on);
     });
     $('#rival').hidden = mode !== 'duel';
-    $('#duel-row').hidden = mode !== 'duel';
+    $('#duel-tile').hidden = mode !== 'duel';
     $('#release').textContent = mode === 'duel' ? 'Start duel' : 'Release';
-    $('#s-lineage-label').textContent = mode === 'duel' ? 'You vs rival' : 'Your lineage';
+    $('#s-lineage-label').textContent = mode === 'duel' ? 'you : rival' : 'yours';
     if (mode === 'duel') renderRival();
     resetWorld();
-    toast(mode === 'duel'
-      ? 'Duel: two species, one arena, two minutes. Last lineage standing wins.'
-      : 'Ecosystem: release species into a living world and see who endures.', 195);
+    note(mode === 'duel'
+      ? 'Duel: two species, one dish, two minutes. Last lineage standing wins.'
+      : 'Ecosystem: release species into a living dish and see who endures.', null);
   }
-
-  document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
   function resetWorld() {
     sim.reset(state.mode);
     state.selected = null;
     hideInspector();
     hideOverlay();
-    lockSliders(false);
+    lock(false);
+    clearLog();
     drawChart();
     updateLegend();
   }
-
   $('#reset').addEventListener('click', resetWorld);
 
+  let releaseLockUntil = 0;
   function release() {
-    if (state.mode === 'ecosystem') {
-      if (performance.now() < state.releaseLock) return;
-      sim.release(Object.assign({}, state.traits));
-      state.releaseLock = performance.now() + 1200;
-      const btn = $('#release');
-      btn.disabled = true;
-      setTimeout(() => (btn.disabled = false), 1200);
-    } else {
-      startDuel();
-    }
+    if (state.mode === 'duel') return startDuel();
+    if (performance.now() < releaseLockUntil) return;
+    sim.release(Object.assign({}, state.traits));
+    releaseLockUntil = performance.now() + 1200;
+    const btn = $('#release');
+    btn.disabled = true;
+    setTimeout(() => (btn.disabled = false), 1200);
   }
 
   function startDuel() {
+    clearLog();
     sim.startDuel(Object.assign({}, state.traits), Object.assign({}, state.rival), state.rivalName);
     state.selected = null;
     hideInspector();
     hideOverlay();
-    lockSliders(true);
+    lock(true);
     if (state.paused) setSpeed(1);
   }
-
   $('#release').addEventListener('click', release);
 
   /* ------------------------------------------------------------ speed */
@@ -169,7 +183,7 @@
   document.querySelectorAll('.speed button').forEach((b) => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
 
   window.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' && e.code !== 'Space') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.code === 'Space') { e.preventDefault(); setSpeed(state.paused ? state.speed : 0); }
     else if (e.key === 'r' || e.key === 'R') release();
     else if (e.key === '1') setSpeed(1);
@@ -178,7 +192,7 @@
     else if (e.key === 'Escape') { state.selected = null; hideInspector(); }
   });
 
-  /* ------------------------------------------------------------ canvas input */
+  /* ------------------------------------------------------------ dish input */
 
   canvas.addEventListener('pointerdown', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -187,11 +201,13 @@
     if (o) {
       state.selected = o;
       showInspector();
-    } else {
+      return;
+    }
+    state.selected = null;
+    hideInspector();
+    if (Math.hypot(x - sim.cx, y - sim.cy) < sim.R) {
       sim.dropFood(x, y, 10);
-      renderer.ripple(x, y, E.FOOD_HUE);
-      state.selected = null;
-      hideInspector();
+      renderer.ripple(x, y);
     }
   });
 
@@ -208,47 +224,44 @@
     const o = state.selected;
     if (!o || inspector.hidden) return;
     const sp = o.sp;
-    const status = o.alive
-      ? `Gen ${o.gen} · ${E.MODE_NAMES[o.mode]}`
-      : `<span class="ins-dead">Died · ${o.cause}</span>`;
+    const status = o.alive ? `gen ${o.gen} · ${E.MODE_NAMES[o.mode]}` : `<span class="ins-dead">died · ${o.cause}</span>`;
     const ePct = Math.max(0, Math.min(100, (o.energy / o.d.maxEnergy) * 100));
     const owner = sp.owner === 'player' ? ' (yours)' : sp.owner === 'rival' ? ' (rival)' : '';
     inspector.innerHTML = `
       <div class="ins-head">
-        <i class="ins-dot" style="--h:${Math.round(o.hue)}"></i>
+        <i class="swatch" style="--h:${Math.round(o.hue)}"></i>
         <div><div class="ins-name">${sp.name}${owner}</div><div class="ins-sub">${status}</div></div>
         <button class="ins-close" aria-label="Close">×</button>
       </div>
-      <div class="ins-energy">
-        <div class="row"><span>Energy</span><span>${Math.max(0, Math.round(o.energy))} / ${Math.round(o.d.maxEnergy)}</span></div>
-        <div class="track"><b style="width:${ePct}%"></b></div>
-      </div>
+      <div class="ins-energy"><span>energy</span><div class="track"><b style="width:${ePct}%"></b></div>
+        <span>${Math.max(0, Math.round(o.energy))}/${Math.round(o.d.maxEnergy)}</span></div>
       <div class="ins-traits">
         ${E.TRAITS.map((k) => `
           <div class="ins-trait" style="--c:${TRAIT_META[k].color}">
             <span>${TRAIT_META[k].label}</span>
-            <div class="track" title="Marker = species founder"><b style="width:${o.t[k] * 10}%"></b><s style="left:${sp.traits[k] * 10}%"></s></div>
-            <span>${o.t[k].toFixed(1)}</span>
+            <div class="track" title="Black mark = species founder"><b style="width:${o.t[k] * 10}%"></b><s style="left:calc(${sp.traits[k] * 10}% - 1px)"></s></div>
+            <output>${o.t[k].toFixed(1)}</output>
           </div>`).join('')}
       </div>
-      <div class="ins-foot">Age ${Math.round(o.age / 60)}s · ${o.children} offspring · ${o.kills} kill${o.kills === 1 ? '' : 's'}</div>`;
+      <div class="ins-foot">age ${Math.round(o.age / 60)}s · ${o.children} offspring · ${o.kills} kill${o.kills === 1 ? '' : 's'}</div>`;
   }
 
-  /* ------------------------------------------------------------ toasts */
+  /* ------------------------------------------------------------ field notes */
 
-  const toasts = $('#toasts');
-  function toast(text, hue) {
-    const el = document.createElement('div');
-    el.className = 'toast';
-    el.innerHTML = `<i style="--h:${Math.round(hue)}"></i><span></span>`;
-    el.querySelector('span').textContent = text;
-    toasts.prepend(el);
-    while (toasts.children.length > 4) toasts.lastChild.remove();
-    setTimeout(() => el.classList.add('out'), 3800);
-    setTimeout(() => el.remove(), 4400);
+  const log = $('#log');
+  function clearLog() {
+    log.innerHTML = '<li class="empty">Nothing observed yet.</li>';
+  }
+  function note(text, hue) {
+    log.querySelector('.empty')?.remove();
+    const li = document.createElement('li');
+    li.innerHTML = `<time>${fmtTime(sim.tick)}</time>${hue == null ? '<span></span>' : `<i class="swatch" style="--h:${Math.round(hue)}"></i>`}<span></span>`;
+    li.lastChild.textContent = text;
+    log.prepend(li);
+    while (log.children.length > 40) log.lastChild.remove();
   }
 
-  /* ------------------------------------------------------------ overlay */
+  /* ------------------------------------------------------------ duel verdict */
 
   const overlay = $('#overlay');
   function hideOverlay() { overlay.hidden = true; overlay.innerHTML = ''; }
@@ -259,20 +272,21 @@
     let line;
     if (ev.result === 'win' && ev.rival === 0) line = `${D.rival.name} was wiped out in ${secs}s. Your lineage reached generation ${D.player.maxGen}.`;
     else if (ev.result === 'lose' && ev.you === 0) line = `Your lineage collapsed after ${secs}s. ${D.rival.name} reached generation ${D.rival.maxGen}.`;
-    else line = `Time's up — ${ev.you} of yours vs ${ev.rival} ${D.rival.name}.`;
+    else line = `Time's up: ${ev.you} of yours vs ${ev.rival} ${D.rival.name}.`;
     overlay.innerHTML = `
-      <div class="overlay-card">
-        <div class="overlay-kicker">Duel complete</div>
+      <div class="verdict">
+        <div class="kicker">duel result</div>
         <h2 class="${ev.result}">${title}</h2>
         <p>${line}</p>
-        <div class="overlay-actions">
-          <button class="primary" data-act="rematch">Rematch</button>
-          <button class="ghost" data-act="new">New rival</button>
-          <button class="ghost" data-act="watch">Watch</button>
+        <div class="row">
+          <button class="btn btn-main" data-act="rematch">Rematch</button>
+          <button class="btn btn-quiet" data-act="new">New rival</button>
+          <button class="btn btn-quiet" data-act="watch">Keep watching</button>
         </div>
       </div>`;
     overlay.hidden = false;
-    lockSliders(false);
+    note(`Duel ${ev.result === 'win' ? 'won' : ev.result === 'lose' ? 'lost' : 'drawn'}`, D.player.hue);
+    lock(false);
   }
   overlay.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
@@ -281,13 +295,13 @@
     else if (act === 'watch') hideOverlay();
   });
 
-  /* ------------------------------------------------------------ stats, chart, legend */
+  /* ------------------------------------------------------------ census */
 
   function drainEvents() {
     if (!sim.events.length) return;
     for (const ev of sim.events) {
       if (ev.type === 'duel-end') showDuelResult(ev);
-      else toast(ev.text, ev.hue);
+      else note(ev.text, ev.hue);
     }
     sim.events.length = 0;
   }
@@ -298,9 +312,10 @@
     $('#s-gen').textContent = st.generation;
     $('#s-species').textContent = st.species;
     $('#s-food').textContent = st.food;
+    $('#clock').textContent = 't ' + fmtTime(sim.tick);
     if (state.mode === 'duel') {
       const D = sim.duel;
-      $('#s-lineage').textContent = D ? `${D.player.count} : ${D.rival.count}` : '—';
+      $('#s-lineage').textContent = D ? `${D.player.count}:${D.rival.count}` : '–';
       const left = D ? Math.max(0, (D.over ? D.limit - D.endTick : D.limit - sim.tick) / 60) : E.DUEL_TICKS / 60;
       $('#s-time').textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
     } else {
@@ -310,34 +325,42 @@
 
   const chart = $('#chart');
   const chartCtx = chart.getContext('2d');
+  let chartDpr = 1;
   function sizeChart() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    chart.width = Math.round(chart.clientWidth * dpr);
-    chart.height = Math.round(chart.clientHeight * dpr);
+    chartDpr = Math.min(window.devicePixelRatio || 1, 2);
+    chart.width = Math.round(chart.clientWidth * chartDpr);
+    chart.height = Math.round(chart.clientHeight * chartDpr);
   }
 
   function drawChart() {
-    const W = chart.width, H = chart.height;
     const g = chartCtx;
+    const W = chart.clientWidth, H = chart.clientHeight;
+    g.setTransform(chartDpr, 0, 0, chartDpr, 0, 0);
     g.clearRect(0, 0, W, H);
     const N = E.HISTORY_MAX, end = sim.sampleIdx, start = end - N;
     let max = 10;
     for (const s of sim.species) for (const v of s.hist) if (v > max) max = v;
-    const pad = 3 * (W / chart.clientWidth || 1);
-    g.strokeStyle = 'rgba(148,170,210,0.1)';
+    const pad = 6;
+    // Graph-paper grid.
+    g.strokeStyle = 'rgba(120,100,60,0.12)';
     g.lineWidth = 1;
     g.beginPath();
-    g.moveTo(0, H - 0.5);
-    g.lineTo(W, H - 0.5);
+    for (let x = 0; x <= W; x += 16) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); }
+    for (let y = 0; y <= H; y += 16) { g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); }
     g.stroke();
+    g.font = '10px "IBM Plex Mono", monospace';
+    g.fillStyle = '#a29d8e';
+    g.fillText(String(max), 4, 12);
+
     const xs = (i) => ((i - start) / N) * W;
     const ys = (v) => H - pad - (v / max) * (H - pad * 2);
     const ordered = sim.species.slice().sort((a, b) => (a.owner === 'player') - (b.owner === 'player'));
     for (const s of ordered) {
       if (!s.hist.length) continue;
       const mine = s.owner === 'player';
-      g.strokeStyle = `hsla(${s.hue},100%,${mine ? 70 : 62}%,${mine ? 1 : 0.7})`;
-      g.lineWidth = (mine ? 2 : 1.2) * (W / chart.clientWidth || 1);
+      g.strokeStyle = `hsl(${s.hue},60%,${mine ? 38 : 48}%)`;
+      g.lineWidth = mine ? 2.2 : 1.3;
+      g.setLineDash(mine || s.owner === 'rival' ? [] : [4, 2]);
       g.beginPath();
       let first = true;
       for (let j = 0; j < s.hist.length; j++) {
@@ -348,62 +371,43 @@
       }
       g.stroke();
     }
+    g.setLineDash([]);
   }
 
   const legend = $('#legend');
   function updateLegend() {
     const alive = sim.species.filter((s) => !s.extinct).sort((a, b) => b.count - a.count).slice(0, 7);
     if (!alive.length) {
-      legend.innerHTML = `<li class="empty">${state.mode === 'duel' ? 'Press Start duel to begin.' : 'No life left. Release a species.'}</li>`;
+      legend.innerHTML = `<li class="empty">${state.mode === 'duel' ? 'Press "Start duel" to begin.' : 'The dish is sterile. Release a species.'}</li>`;
       return;
     }
     legend.innerHTML = alive.map((s) => {
-      const tag = s.owner === 'player' ? '<span class="tag you">you</span>' : s.owner === 'rival' ? '<span class="tag rival">rival</span>' : '<span class="tag">wild</span>';
-      return `<li><i style="--h:${Math.round(s.hue)}"></i><span class="name">${s.name}</span>${tag}<b>${s.count}</b></li>`;
+      const tag = s.owner === 'player' ? '<span class="tag you">yours</span>' : s.owner === 'rival' ? '<span class="tag rival">rival</span>' : '<span class="tag">wild</span>';
+      return `<li><i class="swatch" style="--h:${Math.round(s.hue)}"></i><span class="name">${s.name}</span>${tag}<b>${s.count}</b></li>`;
     }).join('');
   }
 
-  /* ------------------------------------------------------------ preview orb */
+  /* ------------------------------------------------------------ specimen preview */
 
-  const preview = $('#preview');
-  const pctx = preview.getContext('2d');
-  function sizePreview() {
+  const specimen = $('#specimen');
+  const sctx = specimen.getContext('2d');
+  function sizeSpecimen() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    preview.width = Math.round(preview.clientWidth * dpr);
-    preview.height = Math.round(preview.clientHeight * dpr);
-    pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    specimen.width = Math.round(specimen.clientWidth * dpr);
+    specimen.height = Math.round(specimen.clientHeight * dpr);
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  function drawPreview(now) {
-    const w = preview.clientWidth, h = preview.clientHeight;
-    pctx.clearRect(0, 0, w, h);
-    const d = E.derive(state.traits);
-    const hue = E.traitHue(state.traits);
-    const cx = w / 2, cy = h / 2;
-    const om = 0.0006 + state.traits.speed * 0.00012;
-    const t = now * om;
-    const ax = Math.min(46, w * 0.22), ay = 9;
-    const x = cx + Math.sin(t) * ax, y = cy + Math.sin(t * 2) * ay;
-    const vx = Math.cos(t) * ax * om * 16, vy = Math.cos(t * 2) * 2 * ay * om * 16;
-
-    // Vision halo.
-    pctx.strokeStyle = `hsla(${hue},80%,70%,0.12)`;
-    pctx.setLineDash([2, 5]);
-    pctx.beginPath();
-    pctx.arc(x, y, 8 + state.traits.vision * 2.2, 0, Math.PI * 2);
-    pctx.stroke();
-    pctx.setLineDash([]);
-
-    pctx.globalCompositeOperation = 'lighter';
-    renderer.drawOrganism(pctx, x, y, vx, vy, d.radius * 1.5, hue);
-    pctx.globalAlpha = 1;
-    pctx.globalCompositeOperation = 'source-over';
-    if (state.traits.armor >= 6) {
-      pctx.strokeStyle = `hsla(${hue},70%,82%,${((state.traits.armor - 5) / 5) * 0.5})`;
-      pctx.beginPath();
-      pctx.arc(x, y, d.radius * 1.5 + 2.5, 0, Math.PI * 2);
-      pctx.stroke();
-    }
+  function drawSpecimen(now) {
+    const w = specimen.clientWidth, h = specimen.clientHeight;
+    sctx.clearRect(0, 0, w, h);
+    const t = state.traits;
+    const d = E.derive(t);
+    const hue = E.traitHue(t);
+    const a = now * (0.0008 + t.speed * 0.00015);
+    const x = w / 2 + 4 + Math.sin(a) * 6, y = h / 2 + Math.sin(a * 2) * 3;
+    const vx = 0.4 + t.speed * 0.15, vy = Math.cos(a * 2) * 0.3;
+    renderer.drawCell(sctx, x, y, vx, vy, d.radius * 1.6, hue, t.armor, d.hunter, 0, now);
   }
 
   /* ------------------------------------------------------------ resize & loop */
@@ -413,7 +417,7 @@
     renderer.resize(w, h);
     sim.resize(w, h);
     sizeChart();
-    sizePreview();
+    sizeSpecimen();
     drawChart();
   }
   new ResizeObserver(resize).observe(stage);
@@ -431,7 +435,7 @@
       if (acc > 3) acc = 0; // fell behind: drop time rather than spiral
     }
     renderer.draw(sim, state.selected, now);
-    drawPreview(now);
+    drawSpecimen(now);
     drainEvents();
     frame++;
     if (frame % 8 === 0) updateStats();
@@ -439,8 +443,9 @@
     requestAnimationFrame(loop);
   }
 
-  refreshTraits();
+  renderTraits();
   renderRival();
+  clearLog();
   updateStats();
   updateLegend();
   requestAnimationFrame(loop);
